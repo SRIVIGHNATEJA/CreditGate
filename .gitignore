@@ -1,0 +1,19 @@
+# Secrets
+.env
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+env/
+
+# OS
+.DS_Store
+
+# Data
+outputs/
+data/
+*.pdf
+*.docx
