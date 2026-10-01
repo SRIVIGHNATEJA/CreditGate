@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  @page {
+    size: A4;
+    margin: 15mm;
+  }
+  body {
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    color: #1a1a1a;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .header {
+    border-bottom: 2px solid #003366;
+    padding-bottom: 10px;
+    margin-bottom: 15px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .bank-title {
+    font-size: 18px;
+    font-weight: bold;
+    color: #003366;
+  }
+  .meta-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 15px;
+  }
+  .meta-box {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    padding: 8px 12px;
+    border-radius: 4px;
+  }
+  .meta-label {
+    font-size: 9px;
+    color: #64748b;
+    text-transform: uppercase;
+    font-weight: bold;
+  }
+  .meta-val {
+    font-size: 11px;
+    font-weight: bold;
+    color: #0f172a;
+  }
+  .summary-table, .txn-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 15px;
+  }
+  .summary-table th, .summary-table td,
+  .txn-table th, .txn-table td {
+    border: 1px solid #cbd5e1;
+    padding: 6px 8px;
+    text-align: left;
+  }
+  .summary-table th, .txn-table th {
+    background-color: #f1f5f9;
+    font-weight: bold;
+    color: #334155;
+    font-size: 10px;
+  }
+  .text-right {
+    text-align: right;
+  }
+  .bounce-row {
+    background-color: #fff1f2;
+    color: #9f1239;
+    font-weight: bold;
+  }
+  .footer {
+    margin-top: 20px;
+    font-size: 9px;
+    color: #94a3b8;
+    text-align: center;
+    border-top: 1px solid #e2e8f0;
+    padding-top: 8px;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="bank-title">{{ bank_name }}</div>
+    <div>Branch: {{ branch_name }} | IFSC: {{ ifsc_code }}</div>
+  </div>
+  <div style="text-align: right;">
+    <div style="font-weight: bold; font-size: 13px;">ACCOUNT STATEMENT</div>
+    <div>Period: {{ statement_period }}</div>
+  </div>
+</div>
+
+<div class="meta-grid">
+  <div class="meta-box">
+    <div class="meta-label">Account Holder</div>
+    <div class="meta-val">{{ company_name }}</div>
+    <div style="margin-top: 4px;">CIN/PAN: {{ pan_or_cin }}</div>
+    <div>Address: {{ address }}</div>
+  </div>
+  <div class="meta-box">
+    <div class="meta-label">Account Details</div>
+    <div>Account Number: <span class="meta-val">{{ account_number }}</span></div>
+    <div>Account Type: Current Account</div>
+    <div>Currency: INR (₹)</div>
+  </div>
+</div>
+
+<table class="summary-table">
+  <thead>
+    <tr>
+      <th>Opening Balance</th>
+      <th>Total Credits (Inward)</th>
+      <th>Total Debits (Outward)</th>
+      <th>Closing Balance</th>
+      <th>Bounces / Returns</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="text-right">₹ {{ opening_balance }}</td>
+      <td class="text-right" style="color: #166534; font-weight: bold;">₹ {{ total_credits }}</td>
+      <td class="text-right" style="color: #991b1b;">₹ {{ total_debits }}</td>
+      <td class="text-right" style="font-weight: bold;">₹ {{ closing_balance }}</td>
+      <td class="text-right" style="font-weight: bold; {% if bounce_count > 0 %}color: #dc2626;{% endif %}">{{ bounce_count }}</td>
+    </tr>
+  </tbody>
+</table>
+
+<div style="font-weight: bold; margin-bottom: 6px; font-size: 11px;">TRANSACTION LEDGER</div>
+<table class="txn-table">
+  <thead>
+    <tr>
+      <th style="width: 12%;">Date</th>
+      <th style="width: 48%;">Particulars / Narration</th>
+      <th style="width: 12%;">Chq / Ref No</th>
+      <th style="width: 14%;" class="text-right">Debits (₹)</th>
+      <th style="width: 14%;" class="text-right">Credits (₹)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for txn in transactions %}
+    <tr class="{% if txn.is_bounce %}bounce-row{% endif %}">
+      <td>{{ txn.date }}</td>
+      <td>{{ txn.narration }}</td>
+      <td>{{ txn.ref_no }}</td>
+      <td class="text-right">{% if txn.debit %}₹ {{ txn.debit }}{% else %}-{% endif %}</td>
+      <td class="text-right">{% if txn.credit %}₹ {{ txn.credit }}{% else %}-{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="footer">
+  This is a computer-generated account statement and does not require physical signature. Page 1 of 1
+</div>
+
+</body>
+</html>
