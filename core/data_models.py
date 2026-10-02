@@ -60,10 +60,11 @@ class ITRExtraction(BaseModel):
     depreciation: Decimal
     interest_paid: Decimal
     net_worth: Decimal
+    total_debt: Decimal
     existing_emi_obligations: Decimal
     confidence: str = Field(pattern="^(HIGH|LOW)$")
 
-    @field_validator('gross_total_income', 'profit_after_tax', 'depreciation', 'interest_paid', 'net_worth', 'existing_emi_obligations', mode='before')
+    @field_validator('gross_total_income', 'profit_after_tax', 'depreciation', 'interest_paid', 'net_worth', 'total_debt', 'existing_emi_obligations', mode='before')
     def parse_money(cls, v):
         return coerce_currency(v)
 

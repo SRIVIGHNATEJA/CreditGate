@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 import subprocess
 import tempfile
 from decimal import Decimal
@@ -369,6 +370,38 @@ def main():
         )
         itr_pdf = cohort_dir / "itr_acknowledgement.pdf"
         render_pdf_html(itr_html, itr_pdf)
+
+        # Write ground_truth.json for evaluation harness
+        ground_truth = {
+            "cohort": cohort_id,
+            "company_name": data["company_name"],
+            "cin": data["cin"],
+            "pan": data["pan"],
+            "gstin": data["gstin"],
+            "bank": {
+                "opening_balance": str(meta["opening_balance"]),
+                "total_credits": str(meta["total_credits"]),
+                "total_debits": str(meta["total_debits"]),
+                "closing_balance": str(meta["closing_balance"]),
+                "bounce_count": meta["bounce_count"]
+            },
+            "gst": {
+                "taxable_value": str(Decimal(data["gst"]["taxable_value"].replace(",", ""))),
+                "total_tax_paid": str(Decimal(data["gst"]["total_tax_paid"].replace(",", "")))
+            },
+            "itr": {
+                "gross_total_income": str(Decimal(data["itr"]["gross_total_income"].replace(",", ""))),
+                "profit_after_tax": str(Decimal(data["itr"]["profit_after_tax"].replace(",", ""))),
+                "depreciation": str(Decimal(data["itr"]["depreciation"].replace(",", ""))),
+                "interest_paid": str(Decimal(data["itr"]["interest_paid"].replace(",", ""))),
+                "net_worth": str(Decimal(data["itr"]["net_worth"].replace(",", ""))),
+                "total_debt": str(Decimal(data["itr"]["total_debt"].replace(",", ""))),
+                "existing_emi_obligations": str(Decimal(data["itr"]["existing_emi_obligations"].replace(",", "")))
+            }
+        }
+        with open(cohort_dir / "ground_truth.json", "w") as f:
+            json.dump(ground_truth, f, indent=2)
+        print(f"  • Generated Ground Truth: {cohort_dir / 'ground_truth.json'}")
 
     print("\n" + "=" * 70)
     print("ALL MATHEMATICAL RECONCILIATIONS AND PAGINATION CHECKS PASSED.")
