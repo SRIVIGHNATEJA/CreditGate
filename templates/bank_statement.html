@@ -4,82 +4,136 @@
 <meta charset="UTF-8">
 <style>
   @page {
-    size: A4;
-    margin: 15mm;
+    size: A4 portrait;
+    margin: 15mm 12mm 18mm 12mm;
+    @bottom-right {
+      content: "Page " counter(page) " of " counter(pages);
+      font-size: 8.5px;
+      font-family: Arial, sans-serif;
+      color: #64748b;
+    }
   }
   body {
     font-family: 'Helvetica Neue', Arial, sans-serif;
-    color: #1a1a1a;
-    font-size: 11px;
+    color: #1e293b;
+    font-size: 10.5px;
     line-height: 1.4;
+    margin: 0;
   }
   .header {
     border-bottom: 2px solid #003366;
-    padding-bottom: 10px;
-    margin-bottom: 15px;
+    padding-bottom: 8px;
+    margin-bottom: 12px;
     display: flex;
     justify-content: space-between;
   }
   .bank-title {
     font-size: 18px;
-    font-weight: bold;
+    font-weight: 800;
     color: #003366;
+    letter-spacing: -0.3px;
   }
   .meta-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1.1fr 0.9fr;
     gap: 10px;
-    margin-bottom: 15px;
+    margin-bottom: 12px;
   }
   .meta-box {
     background: #f8fafc;
     border: 1px solid #e2e8f0;
-    padding: 8px 12px;
+    padding: 8px 10px;
     border-radius: 4px;
   }
   .meta-label {
-    font-size: 9px;
+    font-size: 8.5px;
     color: #64748b;
     text-transform: uppercase;
-    font-weight: bold;
+    font-weight: 700;
   }
   .meta-val {
     font-size: 11px;
-    font-weight: bold;
+    font-weight: 700;
     color: #0f172a;
   }
-  .summary-table, .txn-table {
+  .summary-table {
     width: 100%;
     border-collapse: collapse;
-    margin-bottom: 15px;
+    margin-bottom: 16px;
   }
-  .summary-table th, .summary-table td,
-  .txn-table th, .txn-table td {
+  .summary-table th, .summary-table td {
     border: 1px solid #cbd5e1;
-    padding: 6px 8px;
+    padding: 7px 8px;
     text-align: left;
   }
-  .summary-table th, .txn-table th {
+  .summary-table th {
     background-color: #f1f5f9;
-    font-weight: bold;
+    font-weight: 700;
     color: #334155;
-    font-size: 10px;
+    font-size: 9.5px;
+  }
+  .txn-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 14px;
+  }
+  .txn-table thead {
+    display: table-header-group;
+  }
+  .txn-table tr {
+    page-break-inside: avoid;
+  }
+  .txn-table th, .txn-table td {
+    border: 1px solid #cbd5e1;
+    padding: 8px 8px;
+    text-align: left;
+    font-size: 9.5px;
+  }
+  .txn-table th {
+    background-color: #003366;
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 9.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.2px;
   }
   .text-right {
     text-align: right;
   }
+  .narration-cell {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 9px;
+    line-height: 1.3;
+    word-break: break-word;
+  }
   .bounce-row {
     background-color: #fff1f2;
     color: #9f1239;
-    font-weight: bold;
+    font-weight: 700;
   }
-  .footer {
+  .charge-row {
+    background-color: #fef2f2;
+    color: #b91c1c;
+    font-style: italic;
+  }
+  .emi-row {
+    background-color: #f0fdf4;
+  }
+  .tax-row {
+    background-color: #eff6ff;
+  }
+  .page-split-row {
+    break-after: page;
+    page-break-after: always;
+  }
+  .footer-notice {
     margin-top: 20px;
-    font-size: 9px;
+    font-size: 8.5px;
     color: #94a3b8;
     text-align: center;
     border-top: 1px solid #e2e8f0;
     padding-top: 8px;
+    page-break-inside: avoid;
   }
 </style>
 </head>
@@ -88,11 +142,11 @@
 <div class="header">
   <div>
     <div class="bank-title">{{ bank_name }}</div>
-    <div>Branch: {{ branch_name }} | IFSC: {{ ifsc_code }}</div>
+    <div style="font-size: 9.5px; color: #334155;">Branch: {{ branch_name }} | IFSC: {{ ifsc_code }}</div>
   </div>
   <div style="text-align: right;">
-    <div style="font-weight: bold; font-size: 13px;">ACCOUNT STATEMENT</div>
-    <div>Period: {{ statement_period }}</div>
+    <div style="font-weight: 800; font-size: 13px; color: #003366;">CURRENT ACCOUNT STATEMENT</div>
+    <div style="font-size: 9.5px;">Period: {{ statement_period }}</div>
   </div>
 </div>
 
@@ -100,54 +154,57 @@
   <div class="meta-box">
     <div class="meta-label">Account Holder</div>
     <div class="meta-val">{{ company_name }}</div>
-    <div style="margin-top: 4px;">CIN/PAN: {{ pan_or_cin }}</div>
-    <div>Address: {{ address }}</div>
+    <div style="margin-top: 3px; font-size: 9px;">CIN/PAN: <strong>{{ pan_or_cin }}</strong></div>
+    <div style="font-size: 9px; color: #475569;">{{ address }}</div>
   </div>
   <div class="meta-box">
-    <div class="meta-label">Account Details</div>
-    <div>Account Number: <span class="meta-val">{{ account_number }}</span></div>
-    <div>Account Type: Current Account</div>
-    <div>Currency: INR (₹)</div>
+    <div class="meta-label">Account Specifications</div>
+    <div>A/C No: <span class="meta-val">{{ account_number }}</span></div>
+    <div style="font-size: 9px;">Product: Current Account - Trade & SME Privilege</div>
+    <div style="font-size: 9px;">Currency: Indian Rupee (INR ₹) | Status: Active</div>
   </div>
 </div>
 
 <table class="summary-table">
   <thead>
     <tr>
-      <th>Opening Balance</th>
-      <th>Total Credits (Inward)</th>
-      <th>Total Debits (Outward)</th>
-      <th>Closing Balance</th>
-      <th>Bounces / Returns</th>
+      <th style="width: 20%;">Opening Balance</th>
+      <th style="width: 20%;" class="text-right">Total Inward Credits</th>
+      <th style="width: 20%;" class="text-right">Total Outward Debits</th>
+      <th style="width: 20%;" class="text-right">Closing Balance</th>
+      <th style="width: 20%;" class="text-right">Total Inward/Outward Bounces</th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <td class="text-right">₹ {{ opening_balance }}</td>
-      <td class="text-right" style="color: #166534; font-weight: bold;">₹ {{ total_credits }}</td>
-      <td class="text-right" style="color: #991b1b;">₹ {{ total_debits }}</td>
-      <td class="text-right" style="font-weight: bold;">₹ {{ closing_balance }}</td>
-      <td class="text-right" style="font-weight: bold; {% if bounce_count > 0 %}color: #dc2626;{% endif %}">{{ bounce_count }}</td>
+      <td>₹ {{ opening_balance }}</td>
+      <td class="text-right" style="color: #166534; font-weight: 700;">₹ {{ total_credits }}</td>
+      <td class="text-right" style="color: #991b1b; font-weight: 700;">₹ {{ total_debits }}</td>
+      <td class="text-right" style="font-weight: 800; color: #0f172a;">₹ {{ closing_balance }}</td>
+      <td class="text-right" style="font-weight: 800; {% if bounce_count > 0 %}color: #dc2626;{% endif %}">{{ bounce_count }}</td>
     </tr>
   </tbody>
 </table>
 
-<div style="font-weight: bold; margin-bottom: 6px; font-size: 11px;">TRANSACTION LEDGER</div>
+<div style="font-weight: 800; margin-bottom: 6px; font-size: 10.5px; color: #003366; text-transform: uppercase;">
+  Detailed Transaction Journal (Chronological Ledger)
+</div>
+
 <table class="txn-table">
   <thead>
     <tr>
-      <th style="width: 12%;">Date</th>
-      <th style="width: 48%;">Particulars / Narration</th>
-      <th style="width: 12%;">Chq / Ref No</th>
-      <th style="width: 14%;" class="text-right">Debits (₹)</th>
-      <th style="width: 14%;" class="text-right">Credits (₹)</th>
+      <th style="width: 11%;">Date</th>
+      <th style="width: 47%;">Particulars / Narration</th>
+      <th style="width: 14%;">Chq / Ref No</th>
+      <th style="width: 14%;" class="text-right">Withdrawals / Debits (₹)</th>
+      <th style="width: 14%;" class="text-right">Deposits / Credits (₹)</th>
     </tr>
   </thead>
   <tbody>
     {% for txn in transactions %}
-    <tr class="{% if txn.is_bounce %}bounce-row{% endif %}">
+    <tr class="{% if loop.index == 8 %}page-split-row{% endif %} {% if txn.is_bounce %}bounce-row{% elif txn.is_charge %}charge-row{% elif txn.is_emi %}emi-row{% elif txn.is_tax %}tax-row{% endif %}">
       <td>{{ txn.date }}</td>
-      <td>{{ txn.narration }}</td>
+      <td class="narration-cell">{{ txn.narration }}</td>
       <td>{{ txn.ref_no }}</td>
       <td class="text-right">{% if txn.debit %}₹ {{ txn.debit }}{% else %}-{% endif %}</td>
       <td class="text-right">{% if txn.credit %}₹ {{ txn.credit }}{% else %}-{% endif %}</td>
@@ -156,8 +213,9 @@
   </tbody>
 </table>
 
-<div class="footer">
-  This is a computer-generated account statement and does not require physical signature. Page 1 of 1
+<div class="footer-notice">
+  * END OF STATEMENT *<br>
+  This is a computer-verified statement issued under the Bankers' Books Evidence Act, 1891. No physical signature required.
 </div>
 
 </body>
