@@ -48,15 +48,23 @@ def calculate_dscr(
     Denominator = Existing Annual EMIs + Proposed Annual EMI (Total Debt Service)
 
     Sentinel Handling:
-    - If Total Debt Service == 0: Returns Decimal('Infinity') (Debt-free applicant).
+    - If Total Debt Service == 0: Returns Decimal('Infinity') if OCF > 0, Decimal('0.00') if OCF == 0, Decimal('-Infinity') if OCF < 0.
     - If Operating Cash Flow <= 0: Returns Decimal('0.00') (Cash-flow deficit).
     """
+    if any(x is None for x in (profit_after_tax, depreciation, interest_paid, annual_existing_emi, annual_proposed_emi)):
+        raise ValueError("INSUFFICIENT_DATA: Missing mandatory parameters for DSCR calculation")
+
     operating_cash_flow = profit_after_tax + depreciation + interest_paid
     total_debt_service = annual_existing_emi + annual_proposed_emi
 
     if total_debt_service <= Decimal("0"):
-        # Zero debt service means infinite coverage
-        return Decimal("Infinity")
+        # Zero debt service gives infinite coverage ONLY if operating cash flow is positive
+        if operating_cash_flow > Decimal("0"):
+            return Decimal("Infinity")
+        elif operating_cash_flow == Decimal("0"):
+            return Decimal("0.00")
+        else:
+            return Decimal("-Infinity")
 
     if operating_cash_flow <= Decimal("0"):
         # Operating cash flow is negative or zero: unable to service any debt
@@ -96,14 +104,17 @@ def calculate_accrual_cash_gap(
 
 
 def safe_divide(
-    numerator: Decimal,
-    denominator: Decimal,
+    numerator: Optional[Decimal],
+    denominator: Optional[Decimal],
     zero_denominator_sentinel: Optional[Decimal] = None
 ) -> Optional[Decimal]:
     """
     Defensive Decimal division preventing silent corruption.
     Explicitly distinguishes between zero denominator (undefined/infinite) and zero numerator.
+    Returns None if either numerator or denominator is None (never silently coerces missing inputs to 0).
     """
+    if numerator is None or denominator is None:
+        return None
     if denominator == Decimal("0"):
         return zero_denominator_sentinel
     return (numerator / denominator).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)

@@ -39,6 +39,16 @@ class ScoreDeduction:
 
 
 @dataclass
+class GateResult:
+    """Result of the deterministic final policy gate."""
+    baseline_verdict: Verdict
+    final_verdict: Verdict
+    cap_applied: Optional[str] = None
+    knockout_applied: Optional[str] = None
+    policy_reasons: List[str] = field(default_factory=list)
+
+
+@dataclass
 class ScoreResult:
     """Complete credit assessment payload produced by the deterministic scoring engine."""
     five_cs: Dict[str, Decimal]
@@ -54,18 +64,174 @@ class ScoreResult:
     policy_reasons: List[str] = field(default_factory=list)
 
 
+def final_policy_gate(
+    target: Any = None,
+    five_cs: Optional[Dict[str, Decimal]] = None,
+    dscr: Optional[Decimal] = None,
+    bounces: Optional[int] = None,
+    severe_flags: Optional[List[str]] = None,
+    *,
+    composite_score: Optional[Decimal] = None,
+    research_findings: Optional[List[str]] = None
+) -> Any:
+    """
+    Pure policy gate function.
+    Deterministic minimum-verdict enforcement:
+    1. Baseline verdict derived from composite score cutoffs.
+    2. Weakest-link floor: Any operational C (Character, Capacity, Capital, Conditions) < 40 caps verdict at CONDITIONAL.
+    3. Hard knock-outs (force REJECT):
+       - DSCR < 1.20 (unless debt-free / Infinity coverage)
+       - Bounce count >= 5 in 12-month window
+       - Severe research findings (e.g. Insolvency / NCLT SEVERE_FLAG)
+    Pure function: no mutation of inputs, zero side effects.
+    Accepts either (ScoreResult, severe_flags) returning a new ScoreResult,
+    or (composite_score, five_cs, dscr, bounces, severe_flags) returning GateResult.
+    """
+    flags = severe_flags if severe_flags is not None else (research_findings if research_findings is not None else [])
+
+    if isinstance(target, ScoreResult):
+        # Pure copy & update of existing ScoreResult
+        bounce_val = 0
+        for d in target.deductions:
+            if d.rule_id == "RULE_CHAR_BOUNCES":
+                bounce_val = int(d.observed_value)
+                break
+
+        gate_res = final_policy_gate(
+            composite_score=target.composite_score,
+            five_cs=target.five_cs,
+            dscr=target.dscr,
+            bounces=bounce_val,
+            severe_flags=flags
+        )
+        return ScoreResult(
+            five_cs=dict(target.five_cs),
+            composite_score=target.composite_score,
+            baseline_verdict=gate_res.baseline_verdict,
+            final_verdict=gate_res.final_verdict,
+            cap_applied=gate_res.cap_applied,
+            knockout_applied=gate_res.knockout_applied,
+            dscr=target.dscr,
+            proposed_monthly_emi=target.proposed_monthly_emi,
+            proposed_annual_emi=target.proposed_annual_emi,
+            deductions=list(target.deductions),
+            policy_reasons=list(gate_res.policy_reasons)
+        )
+
+    # Positional or keyword arguments
+    comp = target if isinstance(target, Decimal) else composite_score
+    if comp is None or five_cs is None or dscr is None or bounces is None:
+        raise ValueError("Missing parameters for final_policy_gate: composite_score, five_cs, dscr, and bounces required")
+
+    # Baseline Verdict from Composite Score
+    if comp >= COMPOSITE_APPROVE_CUTOFF:
+        baseline_verdict = Verdict.APPROVE
+    elif comp >= COMPOSITE_CONDITIONAL_CUTOFF:
+        baseline_verdict = Verdict.CONDITIONAL
+    else:
+        baseline_verdict = Verdict.REJECT
+
+    final_verdict = baseline_verdict
+    cap_applied = None
+    knockout_applied = None
+    policy_reasons: List[str] = []
+
+    # A. The Weakest-Link Floor (Applies to Character, Capacity, Capital, Conditions)
+    operational_pillars = ["CHARACTER", "CAPACITY", "CAPITAL", "CONDITIONS"]
+    for pillar in operational_pillars:
+        pillar_score = five_cs.get(pillar, Decimal("0.0"))
+        if pillar_score < WEAKEST_LINK_THRESHOLD:
+            if final_verdict > Verdict.CONDITIONAL:
+                final_verdict = Verdict.CONDITIONAL
+                cap_applied = f"WEAKEST_LINK_CAP ({pillar} < {WEAKEST_LINK_THRESHOLD})"
+            policy_reasons.append(
+                f"Weakest-Link Cap: {pillar} score ({pillar_score:.1f}) fell below {WEAKEST_LINK_THRESHOLD} threshold. Verdict capped at CONDITIONAL."
+            )
+
+    # B. Hard Knock-Outs (Force Verdict.REJECT)
+    # Knock-Out 1: DSCR < 1.20
+    if dscr != Decimal("Infinity") and dscr < DSCR_KNOCKOUT_THRESHOLD:
+        final_verdict = Verdict.REJECT
+        knockout_applied = f"DSCR_KNOCKOUT ({dscr:.2f} < {DSCR_KNOCKOUT_THRESHOLD})"
+        policy_reasons.append(
+            f"Hard Knock-Out: Operating DSCR ({dscr:.2f}) is below {DSCR_KNOCKOUT_THRESHOLD} minimum debt service hurdle. Automatic REJECT."
+        )
+
+    # Knock-Out 2: Habitual Bounces (>= 5 in 12 months)
+    if bounces >= BOUNCE_KNOCKOUT_THRESHOLD:
+        final_verdict = Verdict.REJECT
+        knockout_applied = f"BOUNCE_KNOCKOUT ({bounces} >= {BOUNCE_KNOCKOUT_THRESHOLD})"
+        policy_reasons.append(
+            f"Hard Knock-Out: Cheque/Mandate bounce frequency ({bounces}) meets or exceeds maximum tolerance of {BOUNCE_KNOCKOUT_THRESHOLD} in 12 months. Automatic REJECT."
+        )
+
+    # Knock-Out 3: Secondary Research Severe Risk Flags (e.g. Insolvency / NCLT)
+    if flags:
+        for flag in flags:
+            flag_upper = flag.upper()
+            if "INSOLVENCY" in flag_upper or "NCLT" in flag_upper or "SEVERE" in flag_upper:
+                final_verdict = Verdict.REJECT
+                knockout_applied = f"RESEARCH_SEVERE_FLAG ({flag})"
+                policy_reasons.append(
+                    f"Hard Knock-Out: Secondary research identified severe legal/solvency risk: {flag}. Automatic REJECT."
+                )
+                break
+
+    return GateResult(
+        baseline_verdict=baseline_verdict,
+        final_verdict=final_verdict,
+        cap_applied=cap_applied,
+        knockout_applied=knockout_applied,
+        policy_reasons=policy_reasons
+    )
+
+
 def score_credit_case(
-    credit_case: CreditCase,
+    credit_case: Optional[CreditCase],
     business_vintage_years: int = 5,
     pan_entity_mismatch: bool = False,
     collateral_value: Decimal = Decimal("0.00"),
     cgtmse_covered: bool = True,
-    high_risk_sector: bool = False
+    high_risk_sector: bool = False,
+    severe_flags: Optional[List[str]] = None
 ) -> ScoreResult:
     """
     Computes preliminary Five Cs score and applies the Final Policy Gate.
     100% deterministic Python Decimal math. Zero LLM hallucinations.
+    Routes missing data to INSUFFICIENT_DATA path without silent coercion to 0.
     """
+    if (
+        credit_case is None
+        or credit_case.bank_data is None
+        or credit_case.gst_data is None
+        or credit_case.itr_data is None
+    ):
+        missing = []
+        if credit_case is None:
+            missing.append("credit_case")
+        else:
+            if credit_case.bank_data is None:
+                missing.append("bank_data")
+            if credit_case.gst_data is None:
+                missing.append("gst_data")
+            if credit_case.itr_data is None:
+                missing.append("itr_data")
+        return ScoreResult(
+            five_cs={
+                "CHARACTER": Decimal("0.0"),
+                "CAPACITY": Decimal("0.0"),
+                "CAPITAL": Decimal("0.0"),
+                "COLLATERAL": Decimal("0.0"),
+                "CONDITIONS": Decimal("0.0")
+            },
+            composite_score=Decimal("0.0"),
+            baseline_verdict=Verdict.INSUFFICIENT_DATA,
+            final_verdict=Verdict.INSUFFICIENT_DATA,
+            policy_reasons=[
+                f"INSUFFICIENT_DATA: Missing mandatory extraction payload ({', '.join(missing)}) - routed for officer review."
+            ]
+        )
+
     bank = credit_case.bank_data
     gst = credit_case.gst_data
     itr = credit_case.itr_data
@@ -134,6 +300,7 @@ def score_credit_case(
     # ------------------------------------------------------------------------
     # 2. CAPACITY (Weight: 30%)
     # ------------------------------------------------------------------------
+    ocf = itr.profit_after_tax + itr.depreciation + itr.interest_paid
     dscr_val = calculate_dscr(
         profit_after_tax=itr.profit_after_tax,
         depreciation=itr.depreciation,
@@ -144,7 +311,11 @@ def score_credit_case(
 
     cap_score = Decimal("20.0")
     if dscr_val == Decimal("Infinity"):
+        # Infinite DSCR (zero debt service) gives full Capacity credit ONLY if OCF > 0
         cap_score = Decimal("100.0")
+    elif dscr_val == Decimal("-Infinity") or ocf < Decimal("0.0"):
+        # Operating cash flow is negative: score by cash-flow sign -> 0.0
+        cap_score = Decimal("0.0")
     else:
         for min_d, max_d, score_val in DSCR_BANDS:
             if min_d <= dscr_val < max_d or (max_d == Decimal("Infinity") and dscr_val >= min_d):
@@ -152,13 +323,16 @@ def score_credit_case(
                 break
 
     if cap_score < Decimal("100.0"):
+        explanation = "Debt Service Coverage Ratio below pristine banking benchmark"
+        if ocf < Decimal("0.0") or dscr_val == Decimal("-Infinity"):
+            explanation = f"Operating Cash Flow deficit (₹ {ocf}) prevents sustainable debt servicing"
         deductions.append(ScoreDeduction(
             rule_id="RULE_CAPACITY_DSCR",
             pillar="CAPACITY",
             points_deducted=Decimal("100.0") - cap_score,
-            observed_value=f"DSCR {dscr_val:.2f}",
+            observed_value=f"DSCR {dscr_val:.2f}" if dscr_val not in (Decimal("Infinity"), Decimal("-Infinity")) else f"{dscr_val}",
             threshold="DSCR >= 1.50",
-            explanation="Debt Service Coverage Ratio below pristine banking benchmark"
+            explanation=explanation
         ))
 
     # ------------------------------------------------------------------------
@@ -269,58 +443,24 @@ def score_credit_case(
     # ------------------------------------------------------------------------
     # 7. FINAL POLICY GATE (MINIMUM VERDICT ENFORCEMENT)
     # ------------------------------------------------------------------------
-    # Baseline Verdict from Composite Score
-    if composite >= COMPOSITE_APPROVE_CUTOFF:
-        baseline_verdict = Verdict.APPROVE
-    elif composite >= COMPOSITE_CONDITIONAL_CUTOFF:
-        baseline_verdict = Verdict.CONDITIONAL
-    else:
-        baseline_verdict = Verdict.REJECT
-
-    final_verdict = baseline_verdict
-    cap_applied = None
-    knockout_applied = None
-    policy_reasons = []
-
-    # A. The Weakest-Link Floor (Applies to Character, Capacity, Capital, Conditions)
-    operational_pillars = ["CHARACTER", "CAPACITY", "CAPITAL", "CONDITIONS"]
-    for pillar in operational_pillars:
-        if five_cs[pillar] < WEAKEST_LINK_THRESHOLD:
-            # Floor acts as a downward cap: never upgrades, caps at CONDITIONAL
-            if final_verdict > Verdict.CONDITIONAL:
-                final_verdict = Verdict.CONDITIONAL
-                cap_applied = f"WEAKEST_LINK_CAP ({pillar} < 40.0)"
-            policy_reasons.append(
-                f"Weakest-Link Cap: {pillar} score ({five_cs[pillar]:.1f}) fell below 40.0 threshold. Verdict capped at CONDITIONAL."
-            )
-
-    # B. Hard Knock-Outs (Force Verdict.REJECT)
-    # Knock-Out 1: DSCR < 1.20
-    if dscr_val != Decimal("Infinity") and dscr_val < DSCR_KNOCKOUT_THRESHOLD:
-        final_verdict = Verdict.REJECT
-        knockout_applied = f"DSCR_KNOCKOUT ({dscr_val:.2f} < 1.20)"
-        policy_reasons.append(
-            f"Hard Knock-Out: Operating DSCR ({dscr_val:.2f}) is below 1.20 minimum debt service hurdle. Automatic REJECT."
-        )
-
-    # Knock-Out 2: Habitual Bounces (>= 5 in 12 months)
-    if bounces >= BOUNCE_KNOCKOUT_THRESHOLD:
-        final_verdict = Verdict.REJECT
-        knockout_applied = f"BOUNCE_KNOCKOUT ({bounces} >= {BOUNCE_KNOCKOUT_THRESHOLD})"
-        policy_reasons.append(
-            f"Hard Knock-Out: Cheque/Mandate bounce frequency ({bounces}) meets or exceeds maximum tolerance of {BOUNCE_KNOCKOUT_THRESHOLD} in 12 months. Automatic REJECT."
-        )
+    gate_result = final_policy_gate(
+        composite_score=composite,
+        five_cs=five_cs,
+        dscr=dscr_val,
+        bounces=bounces,
+        severe_flags=severe_flags
+    )
 
     return ScoreResult(
         five_cs=five_cs,
         composite_score=composite,
-        baseline_verdict=baseline_verdict,
-        final_verdict=final_verdict,
-        cap_applied=cap_applied,
-        knockout_applied=knockout_applied,
-        dscr=dscr_val if dscr_val != Decimal("Infinity") else Decimal("999.99"),
+        baseline_verdict=gate_result.baseline_verdict,
+        final_verdict=gate_result.final_verdict,
+        cap_applied=gate_result.cap_applied,
+        knockout_applied=gate_result.knockout_applied,
+        dscr=dscr_val if dscr_val not in (Decimal("Infinity"), Decimal("-Infinity")) else (Decimal("999.99") if dscr_val == Decimal("Infinity") else Decimal("0.00")),
         proposed_monthly_emi=monthly_emi,
         proposed_annual_emi=annual_proposed_emi,
         deductions=deductions,
-        policy_reasons=policy_reasons
+        policy_reasons=gate_result.policy_reasons
     )

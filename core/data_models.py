@@ -4,7 +4,10 @@ from typing import Optional, Any
 
 def coerce_currency(v: Any) -> Decimal:
     """Safely coerces strings, ints, floats, and Indian numbering (Cr/Lakh) into exact Decimals.
-    Handles standard accounting brackets (1,500) -> -1500."""
+    Handles standard accounting brackets (1,500) -> -1500.
+    Never coerces None or missing inputs to zero."""
+    if v is None:
+        raise ValueError("Cannot coerce None to Decimal (missing input)")
     if isinstance(v, Decimal):
         return v
     if isinstance(v, (int, float)):
@@ -80,6 +83,6 @@ class CreditCase(BaseModel):
     gst_data: Optional[GSTExtraction] = None
     itr_data: Optional[ITRExtraction] = None
 
-    @field_validator('requested_loan_amount', 'proposed_emi', mode='before')
+    @field_validator('requested_loan_amount', 'proposed_emi', 'proposed_rate', mode='before')
     def parse_money(cls, v):
         return coerce_currency(v)

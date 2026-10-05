@@ -7,8 +7,9 @@ class Verdict(IntEnum):
     """
     Strict ordered enum for credit decisions.
     Enforces that final verdict can only be equal to or lower than any policy cap.
-    REJECT (1) < CONDITIONAL (2) < APPROVE (3)
+    INSUFFICIENT_DATA (0) < REJECT (1) < CONDITIONAL (2) < APPROVE (3)
     """
+    INSUFFICIENT_DATA = 0
     REJECT = 1
     CONDITIONAL = 2
     APPROVE = 3
