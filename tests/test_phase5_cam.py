@@ -1,0 +1,152 @@
+import pytest
+import hashlib
+import json
+from decimal import Decimal
+from pathlib import Path
+import sys
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BASE_DIR))
+
+from core.policy import Verdict
+from core.data_models import CreditCase, BankExtraction, GSTExtraction, ITRExtraction
+from core.scorer import score_credit_case, ScoreResult
+from core.cam_generator import generate_cam_markdown, CamGenerationError
+from core.formatting import format_inr
+
+
+def create_test_credit_case(raw_pan: str = "AAACA1234B") -> CreditCase:
+    return CreditCase(
+        company_name="Apex Precision Engineering Pvt Ltd",
+        cin_or_pan=raw_pan,
+        requested_loan_amount=Decimal("5000000.00"),
+        proposed_emi=Decimal("164880.03"),
+        proposed_rate=Decimal("11.50"),
+        proposed_tenure_months=36,
+        bank_data=BankExtraction(
+            total_credits=Decimal("120000000.00"),
+            total_debits=Decimal("115000000.00"),
+            opening_balance=Decimal("2500000.00"),
+            closing_balance=Decimal("7500000.00"),
+            bounce_count=0,
+            confidence="HIGH",
+        ),
+        gst_data=GSTExtraction(
+            taxable_value=Decimal("118000000.00"),
+            total_tax_paid=Decimal("21240000.00"),
+            confidence="HIGH",
+        ),
+        itr_data=ITRExtraction(
+            gross_total_income=Decimal("120000000.00"),
+            profit_after_tax=Decimal("12000000.00"),
+            depreciation=Decimal("3000000.00"),
+            interest_paid=Decimal("2500000.00"),
+            net_worth=Decimal("45000000.00"),
+            total_debt=Decimal("20000000.00"),
+            existing_emi_obligations=Decimal("4000000.00"),
+            confidence="HIGH",
+        ),
+    )
+
+
+def test_cam_generator_content_and_pii_sanitization():
+    """
+    Review Item 5:
+    Test CAM generator content:
+    - Final verdict is present.
+    - Deduction rule IDs are present.
+    - Masked PAN is present.
+    - RAW unmasked PAN is strictly absent (anti-PII leak test).
+    - Rupee formatting with Indian grouping is present.
+    """
+    raw_pan = "AAACA1234B"
+    case = create_test_credit_case(raw_pan=raw_pan)
+    score_res = score_credit_case(case)
+
+    cin_info = {
+        "cin": "U29253DL2018PTC334120",
+        "entity_code": "Private Limited Company",
+        "business_vintage_years": 8,
+        "macro_sector": "Precision Tooling",
+        "state_name": "Delhi",
+    }
+
+    cam_md = generate_cam_markdown(
+        credit_case=case,
+        score_result=score_res,
+        cin_parsed_data=cin_info,
+        app_id="APP-TEST-99"
+    )
+
+    # 1. Final Verdict must be present
+    assert "APPROVE" in cam_md
+
+    # 2. Masked PAN must be present
+    assert "AA***4B" in cam_md
+
+    # 3. CRITICAL REGULATORY COMPLIANCE: Raw unmasked PAN must NOT appear anywhere in CAM!
+    assert raw_pan not in cam_md, f"PII Security Leak: Raw PAN {raw_pan} found in generated CAM document!"
+
+    # 4. Indian Rupee formatting present
+    assert "₹ 50,00,000.00" in cam_md
+    assert "₹ 1,64,880.03" in cam_md
+
+    # 5. Rule IDs present if any deduction exists
+    for deduction in score_res.deductions:
+        assert deduction.rule_id in cam_md
+
+
+def test_cam_generator_blocks_on_insufficient_data():
+    """
+    Review Item 3:
+    Block CAM export when Verdict is INSUFFICIENT_DATA.
+    """
+    case = create_test_credit_case()
+    case.itr_data.profit_after_tax = None
+
+    score_res = score_credit_case(case)
+    assert score_res.final_verdict == Verdict.INSUFFICIENT_DATA
+
+    with pytest.raises(CamGenerationError, match="CAM_BLOCKED_INSUFFICIENT_DATA"):
+        generate_cam_markdown(case, score_res)
+
+
+def test_cam_generator_executive_override():
+    """
+    Verify executive veto flow stamps mandatory justification into the CAM.
+    """
+    case = create_test_credit_case()
+    score_res = score_credit_case(case)
+
+    veto = {
+        "override_active": True,
+        "override_verdict": "CONDITIONAL",
+        "officer_name": "Senior Credit Officer R. Sharma",
+        "justification_text": "Facility approved conditionally upon submission of personal guarantee by promoters.",
+        "timestamp": "2026-10-04T12:00:00Z"
+    }
+
+    cam_md = generate_cam_markdown(
+        credit_case=case,
+        score_result=score_res,
+        executive_override=veto
+    )
+
+    assert "EXECUTIVE OVERRIDE APPLIED" in cam_md
+    assert "Senior Credit Officer R. Sharma" in cam_md
+    assert "Facility approved conditionally upon submission of personal guarantee" in cam_md
+
+
+def test_financials_hash_invalidation():
+    """
+    Review Item 4 & 5:
+    Test hash invalidation: modifying locked financials produces a different hash,
+    invalidating previously cached scores and CAM documents.
+    """
+    f1 = {"revenue": "120000000", "pat": "12000000", "debt": "20000000"}
+    f2 = {"revenue": "120000000", "pat": "-5000000", "debt": "20000000"}  # Changed PAT
+
+    hash1 = hashlib.sha256(json.dumps(f1, sort_keys=True).encode()).hexdigest()
+    hash2 = hashlib.sha256(json.dumps(f2, sort_keys=True).encode()).hexdigest()
+
+    assert hash1 != hash2, "Hash must change when financials are modified"

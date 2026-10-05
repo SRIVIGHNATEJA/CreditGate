@@ -37,47 +37,53 @@ def coerce_currency(v: Any) -> Decimal:
     raise ValueError(f"Invalid type for currency: {type(v)}")
 
 class BankExtraction(BaseModel):
-    total_credits: Decimal
-    total_debits: Decimal
-    opening_balance: Decimal
-    closing_balance: Decimal
-    bounce_count: int
-    confidence: str = Field(pattern="^(HIGH|LOW)$")
+    total_credits: Optional[Decimal] = None
+    total_debits: Optional[Decimal] = None
+    opening_balance: Optional[Decimal] = None
+    closing_balance: Optional[Decimal] = None
+    bounce_count: Optional[int] = None
+    confidence: str = Field(default="HIGH", pattern="^(HIGH|LOW)$")
 
     @field_validator('total_credits', 'total_debits', 'opening_balance', 'closing_balance', mode='before')
     def parse_money(cls, v):
+        if v is None:
+            return None
         return coerce_currency(v)
 
 class GSTExtraction(BaseModel):
-    taxable_value: Decimal
-    total_tax_paid: Decimal
-    confidence: str = Field(pattern="^(HIGH|LOW)$")
+    taxable_value: Optional[Decimal] = None
+    total_tax_paid: Optional[Decimal] = None
+    confidence: str = Field(default="HIGH", pattern="^(HIGH|LOW)$")
 
     @field_validator('taxable_value', 'total_tax_paid', mode='before')
     def parse_money(cls, v):
+        if v is None:
+            return None
         return coerce_currency(v)
 
 class ITRExtraction(BaseModel):
-    gross_total_income: Decimal
-    profit_after_tax: Decimal
-    depreciation: Decimal
-    interest_paid: Decimal
-    net_worth: Decimal
-    total_debt: Decimal
-    existing_emi_obligations: Decimal
-    confidence: str = Field(pattern="^(HIGH|LOW)$")
+    gross_total_income: Optional[Decimal] = None
+    profit_after_tax: Optional[Decimal] = None
+    depreciation: Optional[Decimal] = None
+    interest_paid: Optional[Decimal] = None
+    net_worth: Optional[Decimal] = None
+    total_debt: Optional[Decimal] = None
+    existing_emi_obligations: Optional[Decimal] = None
+    confidence: str = Field(default="HIGH", pattern="^(HIGH|LOW)$")
 
     @field_validator('gross_total_income', 'profit_after_tax', 'depreciation', 'interest_paid', 'net_worth', 'total_debt', 'existing_emi_obligations', mode='before')
     def parse_money(cls, v):
+        if v is None:
+            return None
         return coerce_currency(v)
 
 class CreditCase(BaseModel):
     company_name: str
     cin_or_pan: str
-    requested_loan_amount: Decimal
-    proposed_emi: Decimal
-    proposed_rate: Decimal
-    proposed_tenure_months: int
+    requested_loan_amount: Optional[Decimal] = None
+    proposed_emi: Optional[Decimal] = None
+    proposed_rate: Optional[Decimal] = None
+    proposed_tenure_months: Optional[int] = None
     
     bank_data: Optional[BankExtraction] = None
     gst_data: Optional[GSTExtraction] = None
@@ -85,4 +91,6 @@ class CreditCase(BaseModel):
 
     @field_validator('requested_loan_amount', 'proposed_emi', 'proposed_rate', mode='before')
     def parse_money(cls, v):
+        if v is None:
+            return None
         return coerce_currency(v)

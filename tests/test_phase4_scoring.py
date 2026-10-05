@@ -38,6 +38,7 @@ from core.data_models import (
     ITRExtraction,
     coerce_currency,
 )
+from core.formatting import format_inr
 
 
 def create_baseline_prime_case() -> CreditCase:
@@ -214,6 +215,48 @@ def test_insufficient_data_path_and_conversions():
     # G. safe_divide returns None on zero denominator by default (never silently coerces to 0)
     assert safe_divide(Decimal("100"), Decimal("0")) is None
     assert safe_divide(None, Decimal("10")) is None
+
+
+def test_field_level_none_routes_to_insufficient_data():
+    """
+    Review Item 3:
+    First add a test where one field inside a present object is None and assert INSUFFICIENT_DATA,
+    not an exception.
+    """
+    # Create valid case where itr_data exists, but profit_after_tax is None
+    case_inner_none = create_baseline_prime_case()
+    case_inner_none.itr_data.profit_after_tax = None
+
+    # Must NOT raise TypeError or ValueError
+    res = score_credit_case(case_inner_none)
+    assert res.baseline_verdict == Verdict.INSUFFICIENT_DATA
+    assert res.final_verdict == Verdict.INSUFFICIENT_DATA
+    assert any("itr_data.profit_after_tax" in r for r in res.policy_reasons)
+
+    # Test another inner field in bank_data: bounce_count = None
+    case_bank_none = create_baseline_prime_case()
+    case_bank_none.bank_data.bounce_count = None
+    res_b = score_credit_case(case_bank_none)
+    assert res_b.baseline_verdict == Verdict.INSUFFICIENT_DATA
+    assert res_b.final_verdict == Verdict.INSUFFICIENT_DATA
+    assert any("bank_data.bounce_count" in r for r in res_b.policy_reasons)
+
+
+def test_format_inr_indian_grouping():
+    """
+    Review Item 5:
+    Test rupee formatter with standard Indian grouping (Lakhs and Crores).
+    """
+    assert format_inr(Decimal("0.00")) == "₹ 0.00"
+    assert format_inr(Decimal("500.00")) == "₹ 500.00"
+    assert format_inr(Decimal("1000.00")) == "₹ 1,000.00"
+    assert format_inr(Decimal("10000.00")) == "₹ 10,000.00"
+    assert format_inr(Decimal("164880.03")) == "₹ 1,64,880.03"
+    assert format_inr(Decimal("5000000.00")) == "₹ 50,00,000.00"
+    assert format_inr(Decimal("12345678.50")) == "₹ 1,23,45,678.50"
+    assert format_inr(Decimal("-1500000.00")) == "-₹ 15,00,000.00"
+    assert format_inr(None) == "N/A"
+    assert format_inr(Decimal("164880.03"), include_symbol=False) == "1,64,880.03"
 
 
 def test_safe_divide_and_sentinels():

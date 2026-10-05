@@ -2,12 +2,14 @@ import os
 import re
 import time
 import json
+import hashlib
 from decimal import Decimal
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 import streamlit as st
 import pandas as pd
+import plotly.graph_objects as go
 
 from core.config import MODEL_EXTRACTION, MODEL_RESEARCH
 from core.data_models import (
@@ -28,6 +30,21 @@ from core.onboarding import (
 from core.parser import (
     extract_all_documents,
     verify_bank_reconciliation,
+)
+from core.policy import (
+    Verdict,
+    WEAKEST_LINK_THRESHOLD,
+)
+from core.scorer import (
+    score_credit_case,
+    ScoreResult,
+)
+from core.formatting import (
+    format_inr,
+)
+from core.cam_generator import (
+    generate_cam_markdown,
+    CamGenerationError,
 )
 from core.audit_logger import (
     AuditLogger,
@@ -95,7 +112,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ----------------------------------------------------------------------------
-# 2. SESSION STATE INITIALIZATION (RERUN GUARDS)
+# 2. SESSION STATE INITIALIZATION (RERUN GUARDS & CACHE KEYS)
 # ----------------------------------------------------------------------------
 
 if "app_id" not in st.session_state:
@@ -112,6 +129,20 @@ if "editable_df" not in st.session_state:
     st.session_state.editable_df = None
 if "original_df" not in st.session_state:
     st.session_state.original_df = None
+if "locked_case" not in st.session_state:
+    st.session_state.locked_case = None
+if "locked_financials_hash" not in st.session_state:
+    st.session_state.locked_financials_hash = None
+if "scored_financials_hash" not in st.session_state:
+    st.session_state.scored_financials_hash = None
+if "score_result" not in st.session_state:
+    st.session_state.score_result = None
+if "officer_notes" not in st.session_state:
+    st.session_state.officer_notes = []
+if "executive_override" not in st.session_state:
+    st.session_state.executive_override = None
+if "cam_markdown" not in st.session_state:
+    st.session_state.cam_markdown = None
 
 audit = AuditLogger(st.session_state.app_id)
 
@@ -270,10 +301,12 @@ if not has_all_docs:
 # 6. PIPELINE WORKFLOW TABS
 # ----------------------------------------------------------------------------
 
-tab_onboard, tab_hitl, tab_audit = st.tabs([
+tab_onboard, tab_hitl, tab_scoring, tab_cam, tab_audit = st.tabs([
     "📋 1. Onboarding & Entity Intelligence",
     "🤖 2. Multimodal Extraction & HITL Verification",
-    "📜 3. Live Audit Trail & Provenance"
+    "⚖️ 3. Five Cs Risk Engine & Policy Gate",
+    "📑 4. Executive CAM Report Export",
+    "📜 5. Live Audit Trail & Provenance"
 ])
 
 # ============================================================================
@@ -458,22 +491,376 @@ with tab_hitl:
                     actor="OFFICER",
                     details={"total_fields_reviewed": len(edited_df), "modifications_made": len(changes)}
                 )
+
+                # Reconstruct canonical CreditCase from verified table
+                params_map = {}
+                for idx in range(len(edited_df)):
+                    p_name = edited_df.iloc[idx]["Parameter"]
+                    val = edited_df.iloc[idx]["AI_Extracted_Amount"]
+                    params_map[p_name] = val
+
+                def to_dec(val):
+                    if pd.isna(val) or val is None:
+                        return None
+                    return Decimal(str(val))
+
+                b_data = BankExtraction(
+                    total_credits=to_dec(params_map.get("Total Bank Inward Credits")),
+                    total_debits=to_dec(params_map.get("Total Outward Debits")),
+                    opening_balance=to_dec(params_map.get("Bank Opening Balance")),
+                    closing_balance=to_dec(params_map.get("Bank Closing Balance")),
+                    bounce_count=int(params_map.get("Cheque / Mandate Bounces", 0)) if not pd.isna(params_map.get("Cheque / Mandate Bounces")) else None,
+                    confidence="HIGH"
+                )
+
+                g_data = GSTExtraction(
+                    taxable_value=to_dec(params_map.get("GST Taxable Turnover")),
+                    total_tax_paid=to_dec(params_map.get("Total GST Paid")),
+                    confidence="HIGH"
+                )
+
+                itr_data = ITRExtraction(
+                    gross_total_income=to_dec(params_map.get("Annual Gross Revenue")),
+                    profit_after_tax=to_dec(params_map.get("Profit After Tax (PAT)")),
+                    depreciation=to_dec(params_map.get("Depreciation Expense")),
+                    interest_paid=to_dec(params_map.get("Finance Costs / Interest")),
+                    net_worth=to_dec(params_map.get("Tangible Net Worth")),
+                    total_debt=to_dec(params_map.get("Existing Long-Term Debt")),
+                    existing_emi_obligations=to_dec(params_map.get("Current Annual Debt Service")),
+                    confidence="HIGH"
+                )
+
+                locked_case = CreditCase(
+                    company_name=cohort_selection.replace("Cohort ", "").replace("None (Manual Upload)", "Manual Applicant"),
+                    cin_or_pan=cin_parsed_data["cin"],
+                    requested_loan_amount=Decimal(str(loan_amount)),
+                    proposed_emi=Decimal(str(proposed_emi)),
+                    proposed_rate=Decimal(str(interest_rate)),
+                    proposed_tenure_months=int(tenure_months),
+                    bank_data=b_data,
+                    gst_data=g_data,
+                    itr_data=itr_data
+                )
+
+                # Compute financial hash for state invalidation (Review Item 4)
+                new_hash = hashlib.sha256(
+                    json.dumps(locked_case.model_dump(), sort_keys=True, default=str).encode()
+                ).hexdigest()[:16]
+
+                if st.session_state.scored_financials_hash != new_hash:
+                    st.session_state.score_result = None
+                    st.session_state.cam_markdown = None
+
+                st.session_state.locked_case = locked_case
+                st.session_state.locked_financials_hash = new_hash
                 st.session_state.hitl_confirmed = True
                 st.session_state.editable_df = edited_df
                 st.session_state.original_df = edited_df.copy()
-                st.success("Financial data locked! Provenance stamped in Audit Trail.")
-                st.toast("Ready for Phase 4: Five Cs Scoring & Policy Gate.")
+                st.success("Financial data locked and hash-verified! Ready for Five Cs Scoring.")
+                st.rerun()
 
         with c2:
             if st.button("🔄 Reset Extraction"):
                 st.session_state.extracted_case = None
                 st.session_state.editable_df = None
                 st.session_state.original_df = None
+                st.session_state.locked_case = None
+                st.session_state.locked_financials_hash = None
+                st.session_state.scored_financials_hash = None
+                st.session_state.score_result = None
+                st.session_state.cam_markdown = None
                 st.session_state.hitl_confirmed = False
                 st.rerun()
 
 # ============================================================================
-# TAB 3: LIVE AUDIT TRAIL & PROVENANCE
+# TAB 3: FIVE Cs RISK ENGINE & POLICY GATE
+# ============================================================================
+
+with tab_scoring:
+    st.markdown("### Deterministic Five Cs Risk Scorecard & Policy Gate")
+    st.caption("Evaluated entirely in Python Decimal arithmetic. Zero LLM hallucinations.")
+
+    if not st.session_state.hitl_confirmed or st.session_state.locked_case is None:
+        st.info("⚠️ **Financials Not Locked:** Please review and click 'Confirm & Lock Financials' in Tab 2 before running the Risk Scorer.")
+    else:
+        current_hash = st.session_state.locked_financials_hash
+        is_stale = (st.session_state.scored_financials_hash != current_hash)
+
+        if is_stale or st.session_state.score_result is None:
+            if is_stale and st.session_state.score_result is not None:
+                st.warning("⚠️ **Financials Modified:** Locked financials have changed since last evaluation. Re-run scoring to update.")
+            if st.button("⚖️ Run Deterministic Risk Engine & Policy Gate", type="primary"):
+                score_res = score_credit_case(
+                    credit_case=st.session_state.locked_case,
+                    business_vintage_years=cin_parsed_data.get("business_vintage_years", 5),
+                    pan_entity_mismatch=pan_check.get("mismatch_detected", False),
+                    cgtmse_covered=True
+                )
+                st.session_state.score_result = score_res
+                st.session_state.scored_financials_hash = current_hash
+                st.session_state.cam_markdown = None
+                record_event(
+                    event_type="SCORING_EVALUATED",
+                    actor="DETERMINISTIC_ENGINE",
+                    details={
+                        "composite_score": str(score_res.composite_score),
+                        "baseline_verdict": score_res.baseline_verdict.name,
+                        "final_verdict": score_res.final_verdict.name,
+                        "cap_applied": score_res.cap_applied,
+                        "knockout_applied": score_res.knockout_applied,
+                        "dscr": str(score_res.dscr)
+                    }
+                )
+                st.rerun()
+
+        res: Optional[ScoreResult] = st.session_state.score_result
+        if res is not None:
+            # 1. Handle Verdict.INSUFFICIENT_DATA (Review Item 3: no radar, list missing fields, block CAM)
+            if res.final_verdict == Verdict.INSUFFICIENT_DATA:
+                st.error("🚨 **UNDERWRITING BLOCKED: INSUFFICIENT FINANCIAL DATA**")
+                st.markdown("""
+                The deterministic policy engine halted because one or more mandatory financial parameters are missing.
+                Under banking regulations and policy covenants, credit ratios cannot be evaluated with missing parameters.
+                """)
+                st.markdown("#### Missing Required Parameters Checklist:")
+                for r in res.policy_reasons:
+                    st.markdown(f"- ❌ **{r}**")
+                st.info("💡 **Action Required:** Return to **Tab 2 (HITL Verification)**, provide the required values, and re-confirm.")
+            else:
+                # 2. Key Ratio Metric Bar
+                k1, k2, k3, k4, k5 = st.columns(5)
+                k1.metric("Operating DSCR", f"{res.dscr:.2f}x", delta="Hurdle: 1.20x", delta_color="normal" if res.dscr >= Decimal("1.20") else "inverse")
+
+                itr_l = st.session_state.locked_case.itr_data
+                de_disp = "N/A"
+                if itr_l and itr_l.net_worth and itr_l.net_worth > Decimal("0"):
+                    de_disp = f"{(itr_l.total_debt / itr_l.net_worth):.2f}x"
+                k2.metric("Leverage (D/E)", de_disp, delta="Benchmark: 1.0x", delta_color="normal" if de_disp != "N/A" and float(de_disp.replace("x","")) <= 1.0 else "off")
+
+                gst_l = st.session_state.locked_case.gst_data
+                bank_l = st.session_state.locked_case.bank_data
+                gap_disp = "0.0%"
+                if gst_l and bank_l:
+                    max_t = max(gst_l.taxable_value or Decimal("0"), bank_l.total_credits or Decimal("0"))
+                    if max_t > Decimal("0"):
+                        gap_pct = (abs((gst_l.taxable_value or Decimal("0")) - (bank_l.total_credits or Decimal("0"))) / max_t * Decimal("100"))
+                        gap_disp = f"{gap_pct:.1f}%"
+                k3.metric("Accrual vs Cash Gap", gap_disp, delta="<= 15% Normal", delta_color="normal" if float(gap_disp.replace("%","")) <= 15 else "inverse")
+
+                k4.metric("Tangible Net Worth", format_inr(itr_l.net_worth if itr_l else Decimal("0")))
+                k5.metric("Composite Score", f"{res.composite_score:.1f} / 100", delta=res.baseline_verdict.name)
+
+                # 3. Policy Gate Verdict Banner
+                st.markdown("---")
+                if res.final_verdict == Verdict.APPROVE:
+                    st.success(f"🟢 **FINAL SYSTEM VERDICT: APPROVE** &nbsp;|&nbsp; Baseline: {res.baseline_verdict.name} &nbsp;|&nbsp; Composite: {res.composite_score:.1f}/100.0 (Prism risk thresholds fully satisfied)")
+                elif res.final_verdict == Verdict.CONDITIONAL:
+                    st.warning(f"🟡 **FINAL SYSTEM VERDICT: CONDITIONAL** &nbsp;|&nbsp; {res.cap_applied or 'Review Required'} &nbsp;|&nbsp; (One or more operational pillars constrained by Weakest-Link Floor)")
+                else:
+                    st.error(f"🔴 **FINAL SYSTEM VERDICT: REJECT** &nbsp;|&nbsp; {res.knockout_applied or 'Hard Knockout Violated'}")
+
+                # 4. Radar Chart & Policy Deliberation Grid
+                col_chart, col_reasons = st.columns([1, 1])
+
+                with col_chart:
+                    st.markdown("#### Five Cs Balance Radar")
+                    categories = ["Character", "Capacity", "Capital", "Collateral", "Conditions"]
+                    scores = [
+                        float(res.five_cs.get("CHARACTER", Decimal("0"))),
+                        float(res.five_cs.get("CAPACITY", Decimal("0"))),
+                        float(res.five_cs.get("CAPITAL", Decimal("0"))),
+                        float(res.five_cs.get("COLLATERAL", Decimal("0"))),
+                        float(res.five_cs.get("CONDITIONS", Decimal("0"))),
+                    ]
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatterpolar(
+                        r=scores + [scores[0]],
+                        theta=categories + [categories[0]],
+                        fill='toself',
+                        name='Five Cs Score',
+                        line=dict(color='#2563eb', width=2),
+                        fillcolor='rgba(37, 99, 235, 0.2)'
+                    ))
+                    fig.add_trace(go.Scatterpolar(
+                        r=[40, 40, 40, 40, 40, 40],
+                        theta=categories + [categories[0]],
+                        name='Weakest-Link Floor (40.0)',
+                        line=dict(color='#dc2626', width=1.5, dash='dash')
+                    ))
+                    fig.update_layout(
+                        polar=dict(
+                            radialaxis=dict(visible=True, range=[0, 100])
+                        ),
+                        showlegend=True,
+                        height=360,
+                        margin=dict(l=30, r=30, t=20, b=20)
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+                with col_reasons:
+                    st.markdown("#### Policy Gate Findings & Deliberations")
+                    for reason in res.policy_reasons:
+                        st.markdown(f"• {reason}")
+                    if res.cap_applied:
+                        st.info(f"🛡️ **Weakest-Link Protection:** {res.cap_applied}. In regulated credit underwriting, a high average score cannot mask a severe operational failure.")
+                    if res.knockout_applied:
+                        st.error(f"🚨 **Knockout Enforced:** {res.knockout_applied}.")
+
+                # 5. Auditable Deductions Trail
+                st.markdown("#### Forensic Score Deduction Trail")
+                if res.deductions:
+                    deduct_records = [
+                        {
+                            "Rule ID": d.rule_id,
+                            "Pillar": d.pillar,
+                            "Deduction": f"-{d.points_deducted:.1f} pts",
+                            "Observed Value": str(d.observed_value),
+                            "Benchmark": str(d.threshold),
+                            "Forensic Explanation": d.explanation
+                        }
+                        for d in res.deductions
+                    ]
+                    st.dataframe(pd.DataFrame(deduct_records), use_container_width=True)
+                else:
+                    st.success("Applicant achieved 100% score across all evaluated parameters with zero deductions.")
+
+                # 6. Officer Field Notes & Executive Veto Section
+                st.markdown("---")
+                st.markdown("#### 📝 Credit Officer Field Observations & Executive Veto")
+
+                with st.expander("➕ Append Field Visit Observation Note", expanded=False):
+                    fn_text = st.text_area("Field Visit Observation / Qualitative Notes", placeholder="e.g. Visited plant in Okhla. Machinery in operational condition, factory working at 85% utilization.")
+                    fn_pillar = st.selectbox("Affected C Pillar", ["CHARACTER", "CAPACITY", "CAPITAL", "COLLATERAL", "CONDITIONS", "GENERAL"])
+                    fn_adj = st.slider("Officer Score Adjustment (pts)", min_value=-25, max_value=10, value=0, step=1, help="Adjustments are capped at -40 globally under bank policy")
+                    if st.button("Save Field Note"):
+                        if fn_text.strip():
+                            note_entry = {
+                                "affected_c": fn_pillar,
+                                "note_text": fn_text.strip(),
+                                "adjustment": fn_adj,
+                                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+                            }
+                            st.session_state.officer_notes.append(note_entry)
+                            st.session_state.cam_markdown = None
+                            record_event(
+                                event_type="OFFICER_NOTE_ADDED",
+                                actor="OFFICER",
+                                details=note_entry
+                            )
+                            st.success("Field observation appended and stamped in audit log.")
+                            st.rerun()
+
+                with st.expander("⚠️ Executive Veto (Credit Committee Override)", expanded=False):
+                    st.caption("Under bank governance, credit committee officers may override the algorithmic verdict, but MUST provide written justification.")
+                    veto_active = st.toggle("Enable Executive Veto", value=bool(st.session_state.executive_override and st.session_state.executive_override.get("override_active")))
+                    if veto_active:
+                        veto_verdict = st.selectbox(
+                            "Override Verdict",
+                            ["APPROVE", "CONDITIONAL", "REJECT"],
+                            index=0 if res.final_verdict != Verdict.APPROVE else 1
+                        )
+                        veto_officer = st.text_input("Approving Officer / Authority", value="Senior Credit Officer - MSME Desk")
+                        veto_justification = st.text_area(
+                            "Mandatory Written Justification (Min 20 characters required)",
+                            value=st.session_state.executive_override.get("justification_text", "") if st.session_state.executive_override else "",
+                            placeholder="State exact credit committee rationale for overriding the system verdict..."
+                        )
+                        if st.button("Submit & Seal Executive Veto in Audit Trail"):
+                            if len(veto_justification.strip()) < 20:
+                                st.error("⚠️ Justification is too brief. You must provide at least 20 characters explaining the override rationale.")
+                            else:
+                                veto_data = {
+                                    "override_active": True,
+                                    "original_verdict": res.final_verdict.name,
+                                    "override_verdict": veto_verdict,
+                                    "officer_name": veto_officer.strip(),
+                                    "justification_text": veto_justification.strip(),
+                                    "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+                                }
+                                st.session_state.executive_override = veto_data
+                                st.session_state.cam_markdown = None
+                                record_event(
+                                    event_type="EXECUTIVE_OVERRIDE_APPLIED",
+                                    actor="OFFICER_VETO",
+                                    details=veto_data,
+                                    severity="WARNING"
+                                )
+                                st.success("Executive Veto sealed in Audit Trail! CAM will reflect override.")
+                                st.rerun()
+
+# ============================================================================
+# TAB 4: EXECUTIVE CAM REPORT EXPORT
+# ============================================================================
+
+with tab_cam:
+    st.markdown("### Credit Appraisal Memorandum (CAM) Export")
+    st.caption("Standardized Banking Credit Committee Memorandum generated deterministically with full audit provenance.")
+
+    if st.session_state.score_result is None or st.session_state.locked_case is None:
+        st.info("⚠️ Please complete Financial Verification (Tab 2) and Scoring (Tab 3) before generating the CAM.")
+    elif st.session_state.score_result.final_verdict == Verdict.INSUFFICIENT_DATA:
+        st.error("🚨 **EXPORT BLOCKED: INSUFFICIENT FINANCIAL DATA**")
+        st.markdown("Under regulatory credit compliance, a formal Credit Appraisal Memorandum cannot be exported while mandatory financial parameters are missing.")
+        for r in st.session_state.score_result.policy_reasons:
+            st.markdown(f"- ❌ {r}")
+    else:
+        if st.session_state.cam_markdown is None:
+            try:
+                st.session_state.cam_markdown = generate_cam_markdown(
+                    credit_case=st.session_state.locked_case,
+                    score_result=st.session_state.score_result,
+                    cin_parsed_data=cin_parsed_data,
+                    officer_notes=st.session_state.officer_notes,
+                    executive_override=st.session_state.executive_override,
+                    audit_events=st.session_state.audit_trail,
+                    app_id=st.session_state.app_id
+                )
+            except CamGenerationError as e:
+                st.error(f"CAM Generation Failed: {e}")
+
+        if st.session_state.cam_markdown:
+            col_d1, col_d2 = st.columns([1, 1])
+            with col_d1:
+                st.download_button(
+                    label="📥 Download Formal CAM (.md)",
+                    data=st.session_state.cam_markdown,
+                    file_name=f"CAM_{st.session_state.app_id}.md",
+                    mime="text/markdown"
+                )
+            with col_d2:
+                html_cam = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>CAM - {st.session_state.app_id}</title>
+<style>
+body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #1e293b; max-width: 900px; margin: 40px auto; padding: 0 20px; }}
+h1 {{ color: #1e3a8a; border-bottom: 2px solid #2563eb; padding-bottom: 8px; }}
+h2 {{ color: #0f766e; margin-top: 24px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }}
+table {{ border-collapse: collapse; width: 100%; margin: 16px 0; }}
+th, td {{ border: 1px solid #cbd5e1; padding: 8px 12px; text-align: left; }}
+th {{ background-color: #f1f5f9; color: #0f172a; }}
+code {{ background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 2px 4px; border-radius: 4px; }}
+</style>
+</head>
+<body>
+<pre style="white-space: pre-wrap; font-family: inherit;">{st.session_state.cam_markdown}</pre>
+</body>
+</html>"""
+                st.download_button(
+                    label="📥 Download Formal CAM (.html)",
+                    data=html_cam,
+                    file_name=f"CAM_{st.session_state.app_id}.html",
+                    mime="text/html"
+                )
+
+            st.markdown("---")
+            st.markdown("#### Live Memorandum Preview")
+            with st.container(border=True):
+                st.markdown(st.session_state.cam_markdown)
+
+# ============================================================================
+# TAB 5: LIVE AUDIT TRAIL & PROVENANCE
 # ============================================================================
 
 with tab_audit:

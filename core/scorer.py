@@ -186,6 +186,60 @@ def final_policy_gate(
     )
 
 
+def check_missing_financial_fields(credit_case: Optional[CreditCase]) -> List[str]:
+    """Inspects CreditCase for any missing top-level objects or field-level parameters."""
+    if credit_case is None:
+        return ["credit_case"]
+
+    missing = []
+    # Facility inputs
+    if credit_case.requested_loan_amount is None:
+        missing.append("credit_case.requested_loan_amount")
+    if credit_case.proposed_emi is None:
+        missing.append("credit_case.proposed_emi")
+    if credit_case.proposed_rate is None:
+        missing.append("credit_case.proposed_rate")
+    if credit_case.proposed_tenure_months is None:
+        missing.append("credit_case.proposed_tenure_months")
+
+    # Bank inputs
+    if credit_case.bank_data is None:
+        missing.append("bank_data")
+    else:
+        bank_fields = ["total_credits", "total_debits", "opening_balance", "closing_balance", "bounce_count"]
+        for f in bank_fields:
+            if getattr(credit_case.bank_data, f, None) is None:
+                missing.append(f"bank_data.{f}")
+
+    # GST inputs
+    if credit_case.gst_data is None:
+        missing.append("gst_data")
+    else:
+        gst_fields = ["taxable_value", "total_tax_paid"]
+        for f in gst_fields:
+            if getattr(credit_case.gst_data, f, None) is None:
+                missing.append(f"gst_data.{f}")
+
+    # ITR inputs
+    if credit_case.itr_data is None:
+        missing.append("itr_data")
+    else:
+        itr_fields = [
+            "gross_total_income",
+            "profit_after_tax",
+            "depreciation",
+            "interest_paid",
+            "net_worth",
+            "total_debt",
+            "existing_emi_obligations"
+        ]
+        for f in itr_fields:
+            if getattr(credit_case.itr_data, f, None) is None:
+                missing.append(f"itr_data.{f}")
+
+    return missing
+
+
 def score_credit_case(
     credit_case: Optional[CreditCase],
     business_vintage_years: int = 5,
@@ -198,24 +252,10 @@ def score_credit_case(
     """
     Computes preliminary Five Cs score and applies the Final Policy Gate.
     100% deterministic Python Decimal math. Zero LLM hallucinations.
-    Routes missing data to INSUFFICIENT_DATA path without silent coercion to 0.
+    Routes missing top-level or field-level data to INSUFFICIENT_DATA path without exceptions.
     """
-    if (
-        credit_case is None
-        or credit_case.bank_data is None
-        or credit_case.gst_data is None
-        or credit_case.itr_data is None
-    ):
-        missing = []
-        if credit_case is None:
-            missing.append("credit_case")
-        else:
-            if credit_case.bank_data is None:
-                missing.append("bank_data")
-            if credit_case.gst_data is None:
-                missing.append("gst_data")
-            if credit_case.itr_data is None:
-                missing.append("itr_data")
+    missing = check_missing_financial_fields(credit_case)
+    if missing:
         return ScoreResult(
             five_cs={
                 "CHARACTER": Decimal("0.0"),
