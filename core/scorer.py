@@ -24,6 +24,25 @@ from core.analyser import (
 from core.data_models import CreditCase
 
 
+def _safe_serialize_val(val: Any) -> Any:
+    """Recursively serializes Decimals, handling Decimal('Infinity') safely for JSON."""
+    if val is None:
+        return None
+    if isinstance(val, Decimal):
+        if val == Decimal("Infinity"):
+            return "Infinity"
+        elif val == Decimal("-Infinity"):
+            return "-Infinity"
+        return str(val)
+    if isinstance(val, (int, float, str, bool)):
+        return val
+    if isinstance(val, dict):
+        return {k: _safe_serialize_val(v) for k, v in val.items()}
+    if isinstance(val, list):
+        return [_safe_serialize_val(v) for v in val]
+    return str(val)
+
+
 @dataclass
 class ScoreDeduction:
     """Structured record of an auditable score deduction for forensic explainability."""
@@ -37,6 +56,16 @@ class ScoreDeduction:
     def to_string(self) -> str:
         return f"[{self.rule_id}] {self.pillar}: -{self.points_deducted} pts | Observed: {self.observed_value} (Threshold: {self.threshold}) -> {self.explanation}"
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "rule_id": self.rule_id,
+            "pillar": self.pillar,
+            "points_deducted": _safe_serialize_val(self.points_deducted),
+            "observed_value": _safe_serialize_val(self.observed_value),
+            "threshold": _safe_serialize_val(self.threshold),
+            "explanation": self.explanation,
+        }
+
 
 @dataclass
 class GateResult:
@@ -46,6 +75,15 @@ class GateResult:
     cap_applied: Optional[str] = None
     knockout_applied: Optional[str] = None
     policy_reasons: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "baseline_verdict": self.baseline_verdict.name,
+            "final_verdict": self.final_verdict.name,
+            "cap_applied": self.cap_applied,
+            "knockout_applied": self.knockout_applied,
+            "policy_reasons": list(self.policy_reasons),
+        }
 
 
 @dataclass
@@ -63,6 +101,21 @@ class ScoreResult:
     deductions: List[ScoreDeduction] = field(default_factory=list)
     policy_reasons: List[str] = field(default_factory=list)
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "five_cs": {k: _safe_serialize_val(v) for k, v in self.five_cs.items()},
+            "composite_score": _safe_serialize_val(self.composite_score),
+            "baseline_verdict": self.baseline_verdict.name,
+            "final_verdict": self.final_verdict.name,
+            "cap_applied": self.cap_applied,
+            "knockout_applied": self.knockout_applied,
+            "dscr": _safe_serialize_val(self.dscr),
+            "proposed_monthly_emi": _safe_serialize_val(self.proposed_monthly_emi),
+            "proposed_annual_emi": _safe_serialize_val(self.proposed_annual_emi),
+            "deductions": [d.to_dict() for d in self.deductions],
+            "policy_reasons": list(self.policy_reasons),
+        }
+
 
 def final_policy_gate(
     target: Any = None,
@@ -70,6 +123,7 @@ def final_policy_gate(
     dscr: Optional[Decimal] = None,
     bounces: Optional[int] = None,
     severe_flags: Optional[List[str]] = None,
+    review_flags: Optional[List[str]] = None,
     *,
     composite_score: Optional[Decimal] = None,
     research_findings: Optional[List[str]] = None
@@ -79,13 +133,14 @@ def final_policy_gate(
     Deterministic minimum-verdict enforcement:
     1. Baseline verdict derived from composite score cutoffs.
     2. Weakest-link floor: Any operational C (Character, Capacity, Capital, Conditions) < 40 caps verdict at CONDITIONAL.
-    3. Hard knock-outs (force REJECT):
+    3. Statutory Inquiries (Review Flags): Confirmed inquiries cap verdict at CONDITIONAL.
+    4. Hard knock-outs (force REJECT):
        - DSCR < 1.20 (unless debt-free / Infinity coverage)
        - Bounce count >= 5 in 12-month window
-       - Severe research findings (e.g. Insolvency / NCLT SEVERE_FLAG)
+       - Severe research findings (e.g. Confirmed Insolvency / NCLT SEVERE_FLAG)
     Pure function: no mutation of inputs, zero side effects.
     Accepts either (ScoreResult, severe_flags) returning a new ScoreResult,
-    or (composite_score, five_cs, dscr, bounces, severe_flags) returning GateResult.
+    or (composite_score, five_cs, dscr, bounces, severe_flags, review_flags) returning GateResult.
     """
     flags = severe_flags if severe_flags is not None else (research_findings if research_findings is not None else [])
 
@@ -102,7 +157,8 @@ def final_policy_gate(
             five_cs=target.five_cs,
             dscr=target.dscr,
             bounces=bounce_val,
-            severe_flags=flags
+            severe_flags=flags,
+            review_flags=review_flags
         )
         return ScoreResult(
             five_cs=dict(target.five_cs),
@@ -148,7 +204,18 @@ def final_policy_gate(
                 f"Weakest-Link Cap: {pillar} score ({pillar_score:.1f}) fell below {WEAKEST_LINK_THRESHOLD} threshold. Verdict capped at CONDITIONAL."
             )
 
-    # B. Hard Knock-Outs (Force Verdict.REJECT)
+    # B. Statutory Inquiries (Review Flags): Confirmed inquiries cap verdict at CONDITIONAL
+    if review_flags:
+        for r_flag in review_flags:
+            if final_verdict > Verdict.CONDITIONAL:
+                final_verdict = Verdict.CONDITIONAL
+                if not cap_applied:
+                    cap_applied = f"STATUTORY_INQUIRY_CAP ({r_flag})"
+            policy_reasons.append(
+                f"Statutory Inquiry Cap: Confirmed statutory notice or regulatory inquiry: {r_flag}. Verdict capped at CONDITIONAL."
+            )
+
+    # C. Hard Knock-Outs (Force Verdict.REJECT)
     # Knock-Out 1: DSCR < 1.20
     if dscr != Decimal("Infinity") and dscr < DSCR_KNOCKOUT_THRESHOLD:
         final_verdict = Verdict.REJECT
@@ -165,7 +232,7 @@ def final_policy_gate(
             f"Hard Knock-Out: Cheque/Mandate bounce frequency ({bounces}) meets or exceeds maximum tolerance of {BOUNCE_KNOCKOUT_THRESHOLD} in 12 months. Automatic REJECT."
         )
 
-    # Knock-Out 3: Secondary Research Severe Risk Flags (e.g. Insolvency / NCLT)
+    # Knock-Out 3: Secondary Research Severe Risk Flags (e.g. Confirmed Insolvency / NCLT)
     if flags:
         for flag in flags:
             flag_upper = flag.upper()
@@ -247,7 +314,8 @@ def score_credit_case(
     collateral_value: Decimal = Decimal("0.00"),
     cgtmse_covered: bool = True,
     high_risk_sector: bool = False,
-    severe_flags: Optional[List[str]] = None
+    severe_flags: Optional[List[str]] = None,
+    review_flags: Optional[List[str]] = None
 ) -> ScoreResult:
     """
     Computes preliminary Five Cs score and applies the Final Policy Gate.
@@ -488,7 +556,8 @@ def score_credit_case(
         five_cs=five_cs,
         dscr=dscr_val,
         bounces=bounces,
-        severe_flags=severe_flags
+        severe_flags=severe_flags,
+        review_flags=review_flags
     )
 
     return ScoreResult(

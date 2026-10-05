@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 from decimal import Decimal, InvalidOperation
-from typing import Optional, Any
+from typing import Optional, Any, List
+from enum import Enum
 
 def coerce_currency(v: Any) -> Decimal:
     """Safely coerces strings, ints, floats, and Indian numbering (Cr/Lakh) into exact Decimals.
@@ -94,3 +95,40 @@ class CreditCase(BaseModel):
         if v is None:
             return None
         return coerce_currency(v)
+
+
+class ReviewStatus(str, Enum):
+    """Tripartite review status enforcing Human-in-the-Loop governance."""
+    UNREVIEWED = "UNREVIEWED"
+    CONFIRMED = "CONFIRMED"
+    DISMISSED = "DISMISSED"
+
+
+class FindingTier(str, Enum):
+    """Adverse Media severity tiers with strict policy consequences."""
+    SEVERE = "SEVERE"              # Admitted Insolvency (NCLT Sec 7/9 Admitted, Liquidation Order) -> REJECT if confirmed
+    REVIEW = "REVIEW"              # Statutory Inquiries (DGGI summons, tax notices, petitions) -> CONDITIONAL cap if confirmed
+    INFORMATIONAL = "INFORMATIONAL"# General Adverse Media (Negative PR, executive turnover) -> Informational only
+
+
+class AdverseMediaFinding(BaseModel):
+    """Individual adverse media or legal hit."""
+    id: str
+    tier: FindingTier
+    title: str
+    snippet: str
+    source_url: str
+    review_status: ReviewStatus = ReviewStatus.UNREVIEWED
+    dismissal_reason: Optional[str] = None
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[str] = None
+    is_synthetic: bool = False
+
+
+class AdverseMediaReport(BaseModel):
+    """Aggregated Adverse Media Screening payload."""
+    status: str = "COMPLETED"  # "COMPLETED", "RESEARCH_UNAVAILABLE", "NO_ADVERSE_FINDINGS"
+    findings: List[AdverseMediaFinding] = Field(default_factory=list)
+    query_used: str = ""
+    is_synthetic_demo: bool = False
+    error_message: Optional[str] = None

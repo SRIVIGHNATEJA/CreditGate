@@ -4,7 +4,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 
 from core.policy import Verdict
-from core.data_models import CreditCase
+from core.data_models import CreditCase, AdverseMediaReport
 from core.scorer import ScoreResult
 from core.formatting import format_inr
 from core.audit_logger import mask_identifier
@@ -22,6 +22,7 @@ def generate_cam_markdown(
     officer_notes: Optional[List[Dict[str, Any]]] = None,
     executive_override: Optional[Dict[str, Any]] = None,
     audit_events: Optional[List[Dict[str, Any]]] = None,
+    adverse_media_report: Optional[AdverseMediaReport] = None,
     app_id: str = "APP-GENERIC-001"
 ) -> str:
     """
@@ -150,8 +151,37 @@ def generate_cam_markdown(
         md.append("*No score deductions applied. Applicant scored 100% across all evaluated parameters.*")
     md.append("")
 
-    # 7. Policy Gate Evaluation & Weakest-Link Analysis
-    md.append("## 7. POLICY GATE & HARD KNOCKOUT EVALUATION")
+    # 7. Adverse Media Screening & Legal Due Diligence
+    md.append("## 7. ADVERSE MEDIA SCREENING & LEGAL DUE DILIGENCE")
+    if adverse_media_report is None or adverse_media_report.status == "RESEARCH_UNAVAILABLE":
+        md.append("- **Screening Module Status:** `RESEARCH_UNAVAILABLE`")
+        err_msg = adverse_media_report.error_message if adverse_media_report and adverse_media_report.error_message else "API unconfigured, network timeout, or offline mode."
+        md.append(f"> ⚠️ **RESEARCH_UNAVAILABLE:** External secondary research could not be completed ({err_msg}). Under bank policy, the Credit Officer must conduct independent MCA registry and court docket due diligence prior to loan sanction.")
+    elif adverse_media_report.status == "NO_ADVERSE_FINDINGS":
+        md.append("- **Screening Module Status:** `CLEAN (No Adverse Findings)`")
+        if adverse_media_report.query_used:
+            md.append(f"- **Anchored Search Query:** `{adverse_media_report.query_used}`")
+        md.append("- **Findings Summary:** Zero adverse news, statutory summons, or insolvency petitions detected for the applicant entity.")
+    elif adverse_media_report.status == "COMPLETED":
+        md.append("- **Screening Module Status:** `COMPLETED`")
+        if adverse_media_report.query_used:
+            md.append(f"- **Anchored Search Query:** `{adverse_media_report.query_used}`")
+        if adverse_media_report.is_synthetic_demo:
+            md.append("> ⚠️ **NOTICE:** All adverse media items below are marked `[SYNTHETIC DEMO DATA]` for demonstration purposes.")
+
+        if adverse_media_report.findings:
+            md.append("| Title | Severity Tier | Direct Source URL | Review Status | Notes / Justification |")
+            md.append("|:---|:---|:---|:---|:---|")
+            for f in adverse_media_report.findings:
+                status_badge = f"`{f.review_status.value}`"
+                notes = f.dismissal_reason if f.review_status == "DISMISSED" else (f"Confirmed by {f.reviewed_by}" if f.review_status == "CONFIRMED" else "Awaiting Officer Review")
+                md.append(f"| {f.title} | `{f.tier.value}` | [{f.source_url}]({f.source_url}) | {status_badge} | {notes} |")
+        else:
+            md.append("*No material adverse findings recorded.*")
+    md.append("")
+
+    # 8. Policy Gate Evaluation & Weakest-Link Analysis
+    md.append("## 8. POLICY GATE & HARD KNOCKOUT EVALUATION")
     if score_result.cap_applied:
         md.append(f"- **Policy Cap Applied:** `{score_result.cap_applied}`")
     if score_result.knockout_applied:
@@ -162,8 +192,8 @@ def generate_cam_markdown(
         md.append(f"  - {pr}")
     md.append("")
 
-    # 8. Officer Field Notes & Executive Veto
-    md.append("## 8. CREDIT OFFICER FIELD NOTES & EXECUTIVE VETO")
+    # 9. Officer Field Notes & Executive Veto
+    md.append("## 9. CREDIT OFFICER FIELD NOTES & EXECUTIVE VETO")
     if officer_notes:
         md.append("### Field Visit Observations")
         for idx, n in enumerate(officer_notes, 1):
@@ -181,8 +211,8 @@ def generate_cam_markdown(
         md.append(f"- **Veto Recorded Timestamp:** `{executive_override.get('timestamp', '')}`")
     md.append("")
 
-    # 9. Forensic Audit Trail Appendix
-    md.append("## 9. APPENDIX: FORENSIC AUDIT TRAIL (CHRONOLOGICAL EVENT STREAM)")
+    # 10. Forensic Audit Trail Appendix
+    md.append("## 10. APPENDIX: FORENSIC AUDIT TRAIL (CHRONOLOGICAL EVENT STREAM)")
     if audit_events:
         md.append("| Timestamp | Event Type | Actor | Severity | Summary Details |")
         md.append("|:---|:---|:---|:---|:---|")

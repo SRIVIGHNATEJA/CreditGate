@@ -18,6 +18,17 @@ from core.data_models import (
     GSTExtraction,
     ITRExtraction,
     coerce_currency,
+    ReviewStatus,
+    FindingTier,
+    AdverseMediaFinding,
+    AdverseMediaReport,
+)
+from core.researcher import (
+    build_search_query,
+    search_adverse_media,
+    confirm_adverse_finding,
+    dismiss_adverse_finding,
+    extract_policy_flags,
 )
 from core.onboarding import (
     parse_cin,
@@ -143,6 +154,12 @@ if "executive_override" not in st.session_state:
     st.session_state.executive_override = None
 if "cam_markdown" not in st.session_state:
     st.session_state.cam_markdown = None
+if "research_cache" not in st.session_state:
+    st.session_state.research_cache = {}
+if "current_research_report" not in st.session_state:
+    st.session_state.current_research_report = None
+if "last_research_cin" not in st.session_state:
+    st.session_state.last_research_cin = None
 
 audit = AuditLogger(st.session_state.app_id)
 
@@ -580,6 +597,126 @@ with tab_scoring:
     st.markdown("### Deterministic Five Cs Risk Scorecard & Policy Gate")
     st.caption("Evaluated entirely in Python Decimal arithmetic. Zero LLM hallucinations.")
 
+    # ------------------------------------------------------------------------
+    # ADVERSE MEDIA SCREENING & LEGAL DUE DILIGENCE
+    # ------------------------------------------------------------------------
+    st.markdown("#### 🔍 Adverse Media Screening & Legal Due Diligence")
+    st.caption("Secondary structured search ingestion with keyword/pattern matching. Zero LLM hallucinations.")
+
+    active_cin = cin_parsed_data["cin"] if cin_parsed_data else "UNREGISTERED_MSME"
+    # Disambiguation cache check: Invalidate if applicant CIN changed
+    if st.session_state.last_research_cin != active_cin:
+        st.session_state.last_research_cin = active_cin
+        st.session_state.current_research_report = st.session_state.research_cache.get(active_cin, None)
+
+    company_nm = (
+        st.session_state.locked_case.company_name
+        if st.session_state.locked_case
+        else cohort_selection.replace("Cohort ", "").replace("None (Manual Upload)", "Manual Applicant")
+    )
+    anchored_query = build_search_query(company_nm, cin=active_cin)
+
+    col_q1, col_q2 = st.columns([3, 1])
+    with col_q1:
+        st.code(f"Anchored Identity Query: {anchored_query}", language="sql")
+    with col_q2:
+        use_synthetic_demo = st.checkbox(
+            "🧪 Synthetic Demo Mode",
+            value=not bool(os.getenv("TAVILY_API_KEY")),
+            help="Generates simulated legal/adverse records watermarked with [SYNTHETIC DEMO DATA]"
+        )
+
+    if st.button("🔎 Execute Adverse Media & Legal Docket Scan"):
+        # Check rerun cache keyed by CIN
+        if active_cin in st.session_state.research_cache:
+            st.session_state.current_research_report = st.session_state.research_cache[active_cin]
+        else:
+            with st.spinner("Screening adverse media registries and dockets..."):
+                rep = search_adverse_media(
+                    company_name=company_nm,
+                    cin=active_cin,
+                    mock_mode=use_synthetic_demo
+                )
+                st.session_state.research_cache[active_cin] = rep
+                st.session_state.current_research_report = rep
+                record_event(
+                    event_type="ADVERSE_MEDIA_SCAN_COMPLETED",
+                    actor="RESEARCHER",
+                    details={
+                        "status": rep.status,
+                        "findings_count": len(rep.findings),
+                        "is_synthetic": rep.is_synthetic_demo,
+                        "query": rep.query_used
+                    }
+                )
+        st.session_state.score_result = None
+        st.session_state.cam_markdown = None
+        st.rerun()
+
+    rep: Optional[AdverseMediaReport] = st.session_state.current_research_report
+    if rep is not None:
+        if rep.status == "RESEARCH_UNAVAILABLE":
+            st.warning(
+                f"⚠️ **RESEARCH_UNAVAILABLE:** Secondary screening could not complete ({rep.error_message or 'offline/timeout'}). "
+                "System will NOT default to 'Clean'. Credit Officer must perform manual registry verification."
+            )
+        elif rep.status == "NO_ADVERSE_FINDINGS":
+            st.success("✅ **CLEAN (No Adverse Findings):** Zero adverse media, statutory summons, or insolvency petitions detected.")
+        elif rep.status == "COMPLETED":
+            # Check for UNREVIEWED severe findings
+            has_unreviewed_severe = any(
+                f.tier == FindingTier.SEVERE and f.review_status == ReviewStatus.UNREVIEWED
+                for f in rep.findings
+            )
+            if has_unreviewed_severe:
+                st.error(
+                    "🚨 **OFFICER REVIEW REQUIRED:** Admitted insolvency or severe finding detected! "
+                    "Web search findings carry ZERO effect on the policy gate until explicitly confirmed by the Credit Officer."
+                )
+
+            for f in rep.findings:
+                with st.container(border=True):
+                    col_t1, col_t2 = st.columns([3, 1])
+                    with col_t1:
+                        tier_label = {
+                            FindingTier.SEVERE: "🔴 Severe (Admitted Insolvency)",
+                            FindingTier.REVIEW: "🟡 Review (Statutory Inquiry)",
+                            FindingTier.INFORMATIONAL: "🔵 Informational (General Media)"
+                        }.get(f.tier, str(f.tier))
+                        st.markdown(f"**{f.title}** &nbsp; `{tier_label}`")
+                        st.caption(f.snippet)
+                        st.markdown(f"🔗 [Direct Source Registry]({f.source_url})")
+                    with col_t2:
+                        if f.review_status == ReviewStatus.UNREVIEWED:
+                            st.warning("⏳ Status: UNREVIEWED")
+                            if st.button("✅ Confirm", key=f"conf_{f.id}", help="Confirms finding as authentic. Forwards risk flag to policy gate."):
+                                updated_rep = confirm_adverse_finding(rep, f.id, officer_name="Credit Officer")
+                                st.session_state.research_cache[active_cin] = updated_rep
+                                st.session_state.current_research_report = updated_rep
+                                record_event("FINDING_CONFIRMED", "OFFICER", {"finding_id": f.id, "title": f.title, "tier": f.tier.value})
+                                st.session_state.score_result = None
+                                st.session_state.cam_markdown = None
+                                st.rerun()
+                            with st.popover("❌ Dismiss"):
+                                just = st.text_input("Justification (min 10 chars)", key=f"just_{f.id}")
+                                if st.button("Submit Dismissal", key=f"btn_dism_{f.id}"):
+                                    if len(just.strip()) >= 10:
+                                        updated_rep = dismiss_adverse_finding(rep, f.id, just.strip(), officer_name="Credit Officer")
+                                        st.session_state.research_cache[active_cin] = updated_rep
+                                        st.session_state.current_research_report = updated_rep
+                                        record_event("FINDING_DISMISSED", "OFFICER", {"finding_id": f.id, "title": f.title, "justification": just.strip()})
+                                        st.session_state.score_result = None
+                                        st.session_state.cam_markdown = None
+                                        st.rerun()
+                                    else:
+                                        st.error("Min 10 characters required.")
+                        elif f.review_status == ReviewStatus.CONFIRMED:
+                            st.error(f"🚨 Status: CONFIRMED\n\n*By: {f.reviewed_by}*")
+                        elif f.review_status == ReviewStatus.DISMISSED:
+                            st.success(f"🛡️ Status: DISMISSED\n\n*Reason: {f.dismissal_reason}*")
+
+    st.markdown("---")
+
     if not st.session_state.hitl_confirmed or st.session_state.locked_case is None:
         st.info("⚠️ **Financials Not Locked:** Please review and click 'Confirm & Lock Financials' in Tab 2 before running the Risk Scorer.")
     else:
@@ -590,11 +727,14 @@ with tab_scoring:
             if is_stale and st.session_state.score_result is not None:
                 st.warning("⚠️ **Financials Modified:** Locked financials have changed since last evaluation. Re-run scoring to update.")
             if st.button("⚖️ Run Deterministic Risk Engine & Policy Gate", type="primary"):
+                sev_flags, rev_flags = extract_policy_flags(st.session_state.current_research_report)
                 score_res = score_credit_case(
                     credit_case=st.session_state.locked_case,
                     business_vintage_years=cin_parsed_data.get("business_vintage_years", 5),
                     pan_entity_mismatch=pan_check.get("mismatch_detected", False),
-                    cgtmse_covered=True
+                    cgtmse_covered=True,
+                    severe_flags=sev_flags,
+                    review_flags=rev_flags
                 )
                 st.session_state.score_result = score_res
                 st.session_state.scored_financials_hash = current_hash
@@ -813,6 +953,7 @@ with tab_cam:
                     officer_notes=st.session_state.officer_notes,
                     executive_override=st.session_state.executive_override,
                     audit_events=st.session_state.audit_trail,
+                    adverse_media_report=st.session_state.current_research_report,
                     app_id=st.session_state.app_id
                 )
             except CamGenerationError as e:
