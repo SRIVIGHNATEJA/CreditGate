@@ -15,6 +15,7 @@ env/
 
 # Data
 outputs/
-data/
-*.pdf
+data/*
+!data/synthetic/
+!data/synthetic/**
 *.docx

@@ -30,6 +30,7 @@ from core.researcher import (
     confirm_adverse_finding,
     dismiss_adverse_finding,
     extract_policy_flags,
+    merge_existing_reviews,
 )
 from core.scorer import (
     score_credit_case,
@@ -44,7 +45,7 @@ from core.analyser import safe_divide
 @pytest.fixture
 def prime_credit_case():
     return CreditCase(
-        company_name="Apex Precision Tools Pvt Ltd",
+        company_name="Apex Synthetic Holdings (Demo)",
         cin_or_pan="U29253DL2018PTC334120",
         requested_loan_amount=Decimal("5000000.00"),
         proposed_emi=Decimal("165000.00"),
@@ -88,7 +89,7 @@ def test_unreviewed_severe_finding_leaves_verdict_untouched(prime_credit_case):
     unreviewed_hit = AdverseMediaFinding(
         id="hit-101",
         tier=FindingTier.SEVERE,
-        title="NCLT Section 9 Petition Admitted against Apex Precision Tools",
+        title="NCLT Section 9 Petition Admitted against Apex Synthetic Holdings (Demo)",
         snippet="Insolvency petition admitted by bench.",
         source_url="https://nclt.gov.in/orders/case101",
         review_status=ReviewStatus.UNREVIEWED
@@ -96,7 +97,7 @@ def test_unreviewed_severe_finding_leaves_verdict_untouched(prime_credit_case):
     report = AdverseMediaReport(
         status="COMPLETED",
         findings=[unreviewed_hit],
-        query_used='"Apex Precision Tools"',
+        query_used='"Apex Synthetic Holdings (Demo)"',
         is_synthetic_demo=False
     )
 
@@ -123,17 +124,23 @@ def test_officer_confirmed_severe_finding_triggers_reject(prime_credit_case):
     unreviewed_hit = AdverseMediaFinding(
         id="hit-101",
         tier=FindingTier.SEVERE,
-        title="NCLT Section 9 Petition Admitted against Apex Precision Tools",
+        title="NCLT Section 9 Petition Admitted against Apex Synthetic Holdings (Demo)",
         snippet="Insolvency petition admitted by bench.",
         source_url="https://nclt.gov.in/orders/case101",
         review_status=ReviewStatus.UNREVIEWED
     )
     report = AdverseMediaReport(status="COMPLETED", findings=[unreviewed_hit])
 
-    # Officer confirms finding after reviewing court order
-    confirmed_report = confirm_adverse_finding(report, "hit-101", officer_name="Credit Officer Sharma")
+    # Officer confirms finding after reviewing court order with mandatory reference note
+    confirmed_report = confirm_adverse_finding(
+        report,
+        "hit-101",
+        justification="NCLT Bengaluru Bench Order CP(IB)/102/BB/2026",
+        officer_name="Credit Officer Sharma"
+    )
     assert confirmed_report.findings[0].review_status == ReviewStatus.CONFIRMED
     assert confirmed_report.findings[0].reviewed_by == "Credit Officer Sharma"
+    assert confirmed_report.findings[0].confirmation_note == "NCLT Bengaluru Bench Order CP(IB)/102/BB/2026"
 
     severe_flags, review_flags = extract_policy_flags(confirmed_report)
     assert len(severe_flags) == 1
@@ -169,8 +176,14 @@ def test_officer_confirmed_statutory_inquiry_caps_conditional(prime_credit_case)
     sev_un, rev_un = extract_policy_flags(report)
     assert len(sev_un) == 0 and len(rev_un) == 0
 
-    # Officer confirms inquiry
-    confirmed_report = confirm_adverse_finding(report, "hit-202", officer_name="Risk Officer Iyer")
+    # Officer confirms inquiry with mandatory reference note
+    confirmed_report = confirm_adverse_finding(
+        report,
+        "hit-202",
+        justification="DGGI Summons Reference DGGI/ZU/2026/892",
+        officer_name="Risk Officer Iyer"
+    )
+    assert confirmed_report.findings[0].confirmation_note == "DGGI Summons Reference DGGI/ZU/2026/892"
     sev_conf, rev_conf = extract_policy_flags(confirmed_report)
     assert len(sev_conf) == 0
     assert len(rev_conf) == 1
@@ -232,7 +245,7 @@ def test_missing_api_key_yields_research_unavailable():
     Under NO circumstances should missing key default to 'Clean' or 'No Adverse Findings'.
     """
     with patch.dict("os.environ", {}, clear=True):
-        report = search_adverse_media(company_name="Apex Precision Tools", api_key=None, mock_mode=False)
+        report = search_adverse_media(company_name="Apex Synthetic Holdings (Demo)", api_key=None, mock_mode=False)
         assert report.status == "RESEARCH_UNAVAILABLE"
         assert report.status != "NO_ADVERSE_FINDINGS"
         assert "TAVILY_API_KEY is not configured" in report.error_message
@@ -246,7 +259,7 @@ def test_api_timeout_or_error_yields_research_unavailable():
     mock_session.post.side_effect = requests.Timeout("Connection timed out after 8s")
 
     report = search_adverse_media(
-        company_name="Apex Precision Tools",
+        company_name="Apex Synthetic Holdings (Demo)",
         api_key="test-dummy-key",
         mock_mode=False,
         http_session=mock_session
@@ -262,7 +275,7 @@ def test_synthetic_demo_payloads_have_strict_watermarks():
     snippet, and case number must be prefixed with [SYNTHETIC DEMO DATA].
     """
     report = search_adverse_media(
-        company_name="Kaveri Logistics & Freight Pvt Ltd",
+        company_name="Kaveri Fictitious Freight (Demo)",
         cin="U60200KA2019PTC120481",
         mock_mode=True
     )
@@ -382,3 +395,163 @@ def test_value_none_strictly_separated_from_numeric_zero(prime_credit_case):
     assert safe_divide(None, Decimal("100.0")) is None
     assert safe_divide(Decimal("100.0"), None) is None
     assert safe_divide(Decimal("100.0"), Decimal("0.0"), zero_denominator_sentinel=None) is None
+
+
+# ============================================================================
+# 5. GOVERNANCE, NEGATIVE REGEX & REVIEW PERSISTENCE TESTS
+# ============================================================================
+
+def test_confirm_without_justification_raises_error():
+    """
+    Governance Specification: Confirming an adverse finding requires a mandatory,
+    non-empty justification note (e.g., court order or citation).
+    """
+    hit = AdverseMediaFinding(
+        id="hit-gov-1",
+        tier=FindingTier.SEVERE,
+        title="NCLT Section 9 Admitted",
+        snippet="Order passed.",
+        source_url="https://nclt.gov.in/order1",
+        review_status=ReviewStatus.UNREVIEWED
+    )
+    report = AdverseMediaReport(status="COMPLETED", findings=[hit])
+
+    # 1. Empty string raises ValueError
+    with pytest.raises(ValueError, match="non-empty justification"):
+        confirm_adverse_finding(report, "hit-gov-1", justification="")
+
+    # 2. Whitespace only raises ValueError
+    with pytest.raises(ValueError, match="non-empty justification"):
+        confirm_adverse_finding(report, "hit-gov-1", justification="   \t\n  ")
+
+    # 3. Non-empty justification succeeds
+    confirmed = confirm_adverse_finding(
+        report,
+        "hit-gov-1",
+        justification="NCLT Bengaluru Bench Order CP(IB)/102/BB/2026"
+    )
+    assert confirmed.findings[0].review_status == ReviewStatus.CONFIRMED
+    assert confirmed.findings[0].confirmation_note == "NCLT Bengaluru Bench Order CP(IB)/102/BB/2026"
+
+
+def test_negative_regex_relief_clauses_never_auto_flag_severe(prime_credit_case):
+    """
+    Specification: Assert that phrases like 'petition dismissed', 'withdrawn',
+    'settled', or 'no proceedings' NEVER classify as SEVERE and when UNREVIEWED,
+    never cause auto-rejection or policy gate cap.
+    """
+    relief_cases = [
+        ("NCLT Section 9 petition dismissed with costs against entity", "Tribunal rejected operational creditor plea."),
+        ("Insolvency petition withdrawn by financial creditor", "Settlement arrived between parties."),
+        ("Operational debt dispute settled out of court; NCLT proceedings dropped", "Parties filed joint memo of settlement."),
+        ("No insolvency proceedings pending against applicant firm", "Registrar certificate confirms clean record."),
+        ("NCLT application disposed of following mediation", "Proceedings concluded amicably."),
+    ]
+
+    for title, snippet in relief_cases:
+        tier = classify_finding_tier(title, snippet)
+        # Must NEVER be SEVERE
+        assert tier != FindingTier.SEVERE, f"Failed for title: '{title}'. Classified as {tier} instead of non-severe."
+
+        # When rendered in report as UNREVIEWED, policy gate must leave verdict untouched
+        finding = AdverseMediaFinding(
+            id="relief-1",
+            tier=tier,
+            title=title,
+            snippet=snippet,
+            source_url="https://nclt.gov.in/relief",
+            review_status=ReviewStatus.UNREVIEWED
+        )
+        report = AdverseMediaReport(status="COMPLETED", findings=[finding])
+        sev_flags, rev_flags = extract_policy_flags(report)
+        assert len(sev_flags) == 0, f"Unreviewed relief finding produced severe flag: {sev_flags}"
+
+        res = score_credit_case(
+            credit_case=prime_credit_case,
+            severe_flags=sev_flags,
+            review_flags=rev_flags
+        )
+        assert res.final_verdict == Verdict.APPROVE
+
+
+def test_merge_existing_reviews_persists_officer_state():
+    """
+    Specification: Re-scans must not wipe existing officer determinations.
+    Existing reviews (CONFIRMED / DISMISSED) keyed by finding ID or URL must be merged.
+    """
+    f1 = AdverseMediaFinding(
+        id="f-101",
+        tier=FindingTier.SEVERE,
+        title="NCLT Admitted Order",
+        snippet="Order",
+        source_url="https://nclt.gov.in/order1",
+        review_status=ReviewStatus.CONFIRMED,
+        confirmation_note="Order Ref 101/2026",
+        reviewed_by="Credit Officer A",
+        reviewed_at="2026-09-20 10:00:00 UTC"
+    )
+    f2 = AdverseMediaFinding(
+        id="f-102",
+        tier=FindingTier.REVIEW,
+        title="DGGI Notice",
+        snippet="Notice",
+        source_url="https://taxscan.in/notice2",
+        review_status=ReviewStatus.DISMISSED,
+        dismissal_reason="Entity homonym verified through PAN mismatch.",
+        reviewed_by="Credit Officer B",
+        reviewed_at="2026-09-20 10:05:00 UTC"
+    )
+    existing_report = AdverseMediaReport(status="COMPLETED", findings=[f1, f2])
+
+    # New incoming scan with fresh unreviewed copies of same findings
+    fresh_f1 = f1.model_copy(update={"review_status": ReviewStatus.UNREVIEWED, "confirmation_note": None})
+    fresh_f2 = f2.model_copy(update={"review_status": ReviewStatus.UNREVIEWED, "dismissal_reason": None})
+    fresh_f3 = AdverseMediaFinding(
+        id="f-103",
+        tier=FindingTier.INFORMATIONAL,
+        title="New Expansion",
+        snippet="News",
+        source_url="https://news.com/item3",
+        review_status=ReviewStatus.UNREVIEWED
+    )
+    new_report = AdverseMediaReport(status="COMPLETED", findings=[fresh_f1, fresh_f2, fresh_f3])
+
+    merged = merge_existing_reviews(new_report, existing_report)
+
+    # f-101 must retain CONFIRMED and confirmation_note
+    merged_f1 = next(f for f in merged.findings if f.id == "f-101")
+    assert merged_f1.review_status == ReviewStatus.CONFIRMED
+    assert merged_f1.confirmation_note == "Order Ref 101/2026"
+    assert merged_f1.reviewed_by == "Credit Officer A"
+
+    # f-102 must retain DISMISSED and dismissal_reason
+    merged_f2 = next(f for f in merged.findings if f.id == "f-102")
+    assert merged_f2.review_status == ReviewStatus.DISMISSED
+    assert "Entity homonym" in merged_f2.dismissal_reason
+
+    # f-103 must remain UNREVIEWED
+    merged_f3 = next(f for f in merged.findings if f.id == "f-103")
+    assert merged_f3.review_status == ReviewStatus.UNREVIEWED
+
+
+def test_no_adverse_findings_carries_legal_disclaimer():
+    """
+    Specification: Clean search result carries mandatory disclaimer that
+    'screening is not a legal clearance'.
+    """
+    mock_session = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"results": []}
+    mock_session.post.return_value = mock_resp
+
+    report = search_adverse_media(
+        company_name="Apex Synthetic Holdings (Demo)",
+        api_key="test-api-key",
+        mock_mode=False,
+        http_session=mock_session
+    )
+    assert report.status == "NO_ADVERSE_FINDINGS"
+    assert len(report.findings) == 0
+    assert report.disclaimer is not None
+    assert "not a legal clearance" in report.disclaimer.lower()

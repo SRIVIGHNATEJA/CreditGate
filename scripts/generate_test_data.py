@@ -49,7 +49,7 @@ def format_inr(d: Decimal) -> str:
 
 COHORTS = {
     "cohort_1_prime": {
-        "company_name": "Apex Precision Tools Pvt Ltd",
+        "company_name": "Apex Synthetic Holdings (Demo)",
         "cin": "U29253DL2018PTC334120",
         "pan": "AAACA1234B",
         "gstin": "07AAACA1234B1Z5",
@@ -89,8 +89,8 @@ COHORTS = {
             {"date": "25-Mar-2026", "narration": "SALARY/CORP_SALARY_DISBURSEMENT_H2_BATCH", "ref_no": "SAL110293", "debit": Decimal("22000000.00"), "credit": None, "is_bounce": False, "is_charge": False, "is_emi": False, "is_tax": False},
         ],
         "gst": {
-            "legal_name": "Apex Precision Tools Private Limited",
-            "trade_name": "Apex Precision Tools",
+            "legal_name": "Apex Synthetic Holdings (Demo)",
+            "trade_name": "Apex Synthetic Holdings (Demo)",
             "tax_period": "March 2026 (Annualized FY 2025-26 Summary)",
             "filing_date": "20-Apr-2026",
             "arn": "AA0703260019283",
@@ -115,7 +115,7 @@ COHORTS = {
         }
     },
     "cohort_2_distressed": {
-        "company_name": "Kaveri Logistics & Freight Pvt Ltd",
+        "company_name": "Kaveri Fictitious Freight (Demo)",
         "cin": "U60200KA2019PTC120481",
         "pan": "AAACK5678M",
         "gstin": "29AAACK5678M1Z2",
@@ -160,8 +160,8 @@ COHORTS = {
             {"date": "22-Mar-2026", "narration": "CMS/COLL/SCHNEIDER_ELECTRIC_FREIGHT", "ref_no": "CMS110293", "debit": None, "credit": Decimal("5000000.00"), "is_bounce": False, "is_charge": False, "is_emi": False, "is_tax": False},
         ],
         "gst": {
-            "legal_name": "Kaveri Logistics & Freight Private Limited",
-            "trade_name": "Kaveri Freight Lines",
+            "legal_name": "Kaveri Fictitious Freight (Demo)",
+            "trade_name": "Kaveri Fictitious Freight (Demo)",
             "tax_period": "March 2026 (Annualized FY 2025-26 Summary)",
             "filing_date": "28-Apr-2026",
             "arn": "AA2903260049182",
@@ -186,7 +186,7 @@ COHORTS = {
         }
     },
     "cohort_3_mismatch": {
-        "company_name": "Bharat Steels & Infrastructure LLP",
+        "company_name": "Bharat Mock Steels & Infra (Demo)",
         "cin": "AAB-4921",
         "pan": "AABFB8910N",
         "gstin": "27AABFB8910N1Z8",
@@ -223,8 +223,8 @@ COHORTS = {
             {"date": "18-Mar-2026", "narration": "RTGS/INW/GMR_INFRASTRUCTURE_METRO", "ref_no": "R99381029", "debit": None, "credit": Decimal("9500000.00"), "is_bounce": False, "is_charge": False, "is_emi": False, "is_tax": False},
         ],
         "gst": {
-            "legal_name": "Bharat Steels & Infrastructure LLP",
-            "trade_name": "Bharat Steels",
+            "legal_name": "Bharat Mock Steels & Infra (Demo)",
+            "trade_name": "Bharat Mock Steels & Infra (Demo)",
             "tax_period": "March 2026 (Annualized FY 2025-26 Summary)",
             "filing_date": "18-Apr-2026",
             "arn": "AA2703260081924",

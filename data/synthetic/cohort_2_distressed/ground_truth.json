@@ -1,0 +1,27 @@
+{
+  "cohort": "cohort_2_distressed",
+  "company_name": "Kaveri Fictitious Freight (Demo)",
+  "cin": "U60200KA2019PTC120481",
+  "pan": "AAACK5678M",
+  "gstin": "29AAACK5678M1Z2",
+  "bank": {
+    "opening_balance": "810200.00",
+    "total_credits": "42000000.00",
+    "total_debits": "41800000.00",
+    "closing_balance": "1010200.00",
+    "bounce_count": 5
+  },
+  "gst": {
+    "taxable_value": "41000000.00",
+    "total_tax_paid": "7380000.00"
+  },
+  "itr": {
+    "gross_total_income": "41000000.00",
+    "profit_after_tax": "12000000.00",
+    "depreciation": "1000000.00",
+    "interest_paid": "3500000.00",
+    "net_worth": "4000000.00",
+    "total_debt": "32000000.00",
+    "existing_emi_obligations": "4500000.00"
+  }
+}

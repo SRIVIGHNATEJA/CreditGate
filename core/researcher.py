@@ -24,7 +24,7 @@ def build_search_query(
     """
     Constructs an anchored search query with corporate identity tokens
     to minimize homonym collisions and disambiguate similarly named entities.
-    Example: '"Apex Precision Tools" AND ("U29253DL2018PTC334120" OR "Rajesh Kumar")'
+    Example: '"Apex Synthetic Holdings (Demo)" AND ("U29253DL2018PTC334120" OR "Rajesh Kumar")'
     """
     clean_company = company_name.strip().replace('"', '')
     clean_cin = cin.strip().replace('"', '') if cin and cin != "UNREGISTERED_MSME" else None
@@ -85,6 +85,16 @@ INFORMATIONAL_PATTERNS = [
     r"\bexpansion\b",
 ]
 
+# Explicit relief or dismissal phrases: must NEVER classify as SEVERE
+NEGATIVE_RELIEF_PATTERNS = [
+    r"\bpetition\s+(?:dismissed|rejected|withdrawn|settled)\b",
+    r"\bproceedings\s+(?:dismissed|quashed|stayed|withdrawn|settled)\b",
+    r"\bwithdrawn\b",
+    r"\bsettled\s+(?:out\s+of\s+court|amicably)?\b",
+    r"\bno\s+(?:insolvency|proceedings|adverse\s+findings)\b",
+    r"\bdisposed\s+of\b",
+]
+
 
 def classify_finding_tier(title: str, snippet: str) -> FindingTier:
     """
@@ -93,10 +103,14 @@ def classify_finding_tier(title: str, snippet: str) -> FindingTier:
     """
     full_text = f"{title} {snippet}".lower()
 
-    # 1. Check Admitted Insolvency (Severe)
-    for pattern in SEVERE_PATTERNS:
-        if re.search(pattern, full_text):
-            return FindingTier.SEVERE
+    # Guard: If explicit relief or dismissal phrase is present, NEVER flag as SEVERE
+    has_relief = any(re.search(pat, full_text) for pat in NEGATIVE_RELIEF_PATTERNS)
+
+    # 1. Check Admitted Insolvency (Severe) only if no relief/dismissal indicator
+    if not has_relief:
+        for pattern in SEVERE_PATTERNS:
+            if re.search(pattern, full_text):
+                return FindingTier.SEVERE
 
     # 2. Check Statutory Inquiries (Review)
     for pattern in REVIEW_PATTERNS:
@@ -123,52 +137,55 @@ def generate_synthetic_demo_findings(
     company_lower = company_name.lower()
     findings: List[AdverseMediaFinding] = []
 
-    if "kaveri" in company_lower or "distressed" in company_lower:
+    if "kaveri" in company_lower or "distressed" in company_lower or "fictitious" in company_lower:
+        fictional_name = "Kaveri Fictitious Freight (Demo)"
         findings.append(AdverseMediaFinding(
             id=str(uuid.uuid4())[:8],
             tier=FindingTier.SEVERE,
-            title=f"[SYNTHETIC DEMO DATA] NCLT Bengaluru Bench Admitted Section 9 Petition against {company_name} (CP(IB)/102/BB/2026)",
-            snippet=f"[SYNTHETIC DEMO DATA] The National Company Law Tribunal (NCLT) Bengaluru Bench has admitted the insolvency petition filed by operational creditor under Section 9 of IBC. Interim Resolution Professional (IRP) appointed; moratorium declared under Section 14.",
-            source_url="https://demo-registry.nclt.gov.in/orders/2026/synthetic/kaveri_sec9.pdf",
+            title=f"[SYNTHETIC DEMO DATA] [Unverified Media Mention] NCLT Bengaluru Bench Admitted Section 9 Petition against {fictional_name} (CP(IB)/102/BB/2026)",
+            snippet=f"[SYNTHETIC DEMO DATA] [Unverified Media Mention] The National Company Law Tribunal (NCLT) Bengaluru Bench has admitted the insolvency petition filed by operational creditor under Section 9 of IBC. Interim Resolution Professional (IRP) appointed; moratorium declared under Section 14.",
+            source_url="https://example.com/orders/2026/synthetic/kaveri_sec9.pdf",
             review_status=ReviewStatus.UNREVIEWED,
             is_synthetic=True
         ))
         findings.append(AdverseMediaFinding(
             id=str(uuid.uuid4())[:8],
             tier=FindingTier.REVIEW,
-            title=f"[SYNTHETIC DEMO DATA] DGGI Zonal Unit issues Summons to {company_name} regarding ITC Discrepancy",
-            snippet=f"[SYNTHETIC DEMO DATA] Directorate General of GST Intelligence (DGGI) issued formal summons regarding ₹1.45 Cr input tax credit (ITC) reconciliation mismatch for FY 2024-25.",
-            source_url="https://demo-legal.taxscan.in/dggi/2026/synthetic/summons_4891.html",
+            title=f"[SYNTHETIC DEMO DATA] [Unverified Media Mention] DGGI Zonal Unit issues Summons to {fictional_name} regarding ITC Discrepancy",
+            snippet=f"[SYNTHETIC DEMO DATA] [Unverified Media Mention] Directorate General of GST Intelligence (DGGI) issued formal summons regarding ₹1.45 Cr input tax credit (ITC) reconciliation mismatch for FY 2024-25.",
+            source_url="https://example.com/dggi/2026/synthetic/summons_4891.html",
             review_status=ReviewStatus.UNREVIEWED,
             is_synthetic=True
         ))
-    elif "bharat" in company_lower or "mismatch" in company_lower:
+    elif "bharat" in company_lower or "mismatch" in company_lower or "mock" in company_lower:
+        fictional_name = "Bharat Mock Steels & Infra (Demo)"
         findings.append(AdverseMediaFinding(
             id=str(uuid.uuid4())[:8],
             tier=FindingTier.REVIEW,
-            title=f"[SYNTHETIC DEMO DATA] Commercial Taxes Authority issues Show Cause Notice to {company_name}",
-            snippet=f"[SYNTHETIC DEMO DATA] State GST audit wing issued inquiry notice seeking physical verification of outward turnover and e-way bill reconciliations.",
-            source_url="https://demo-gstportal.gov.in/notices/2026/synthetic/scn_9912.html",
+            title=f"[SYNTHETIC DEMO DATA] [Unverified Media Mention] Commercial Taxes Authority issues Show Cause Notice to {fictional_name}",
+            snippet=f"[SYNTHETIC DEMO DATA] [Unverified Media Mention] State GST audit wing issued inquiry notice seeking physical verification of outward turnover and e-way bill reconciliations.",
+            source_url="https://example.com/notices/2026/synthetic/scn_9912.html",
             review_status=ReviewStatus.UNREVIEWED,
             is_synthetic=True
         ))
         findings.append(AdverseMediaFinding(
             id=str(uuid.uuid4())[:8],
             tier=FindingTier.INFORMATIONAL,
-            title=f"[SYNTHETIC DEMO DATA] Steel commodity price fluctuations compress margins for {company_name}",
-            snippet=f"[SYNTHETIC DEMO DATA] Secondary steel and structural fabrication manufacturers faced raw material price headwinds during the recent fiscal quarter.",
-            source_url="https://demo-news.steelmint.com/market-reports/2026/synthetic/msme_analysis.html",
+            title=f"[SYNTHETIC DEMO DATA] [Unverified Media Mention] Steel commodity price fluctuations compress margins for {fictional_name}",
+            snippet=f"[SYNTHETIC DEMO DATA] [Unverified Media Mention] Secondary steel and structural fabrication manufacturers faced raw material price headwinds during the recent fiscal quarter.",
+            source_url="https://example.com/market-reports/2026/synthetic/msme_analysis.html",
             review_status=ReviewStatus.UNREVIEWED,
             is_synthetic=True
         ))
     else:
         # Prime / Default Cohort: Informational news only
+        fictional_name = "Apex Synthetic Holdings (Demo)"
         findings.append(AdverseMediaFinding(
             id=str(uuid.uuid4())[:8],
             tier=FindingTier.INFORMATIONAL,
-            title=f"[SYNTHETIC DEMO DATA] {company_name} commissions modernized precision manufacturing plant",
-            snippet=f"[SYNTHETIC DEMO DATA] Engineering enterprise inaugurates enhanced tooling bay with CNC machinery; management reports stable order pipeline.",
-            source_url="https://demo-business.thehindu.com/industry/2026/synthetic/apex_expansion.html",
+            title=f"[SYNTHETIC DEMO DATA] [Unverified Media Mention] {fictional_name} commissions modernized precision manufacturing plant",
+            snippet=f"[SYNTHETIC DEMO DATA] [Unverified Media Mention] Engineering enterprise inaugurates enhanced tooling bay with CNC machinery; management reports stable order pipeline.",
+            source_url="https://example.com/industry/2026/synthetic/apex_expansion.html",
             review_status=ReviewStatus.UNREVIEWED,
             is_synthetic=True
         ))
@@ -262,15 +279,17 @@ def search_adverse_media(
                 findings=[],
                 query_used=query,
                 is_synthetic_demo=False,
-                error_message=None
+                error_message=None,
+                disclaimer="No adverse findings in screened sources; this is not a legal clearance."
             )
 
         findings: List[AdverseMediaFinding] = []
         for r in results:
-            title = r.get("title", "Untitled Notice")
+            raw_title = r.get("title", "Untitled Notice")
+            title = f"[Unverified Media Mention] {raw_title}"
             snippet = r.get("content", "")
             source_url = r.get("url", "https://ibbi.gov.in")
-            tier = classify_finding_tier(title, snippet)
+            tier = classify_finding_tier(raw_title, snippet)
 
             findings.append(AdverseMediaFinding(
                 id=str(uuid.uuid4())[:8],
@@ -308,18 +327,23 @@ def search_adverse_media(
 def confirm_adverse_finding(
     report: AdverseMediaReport,
     finding_id: str,
+    justification: str,
     officer_name: str = "Loan Officer"
 ) -> AdverseMediaReport:
     """
-    Transitions finding to CONFIRMED.
+    Transitions finding to CONFIRMED with mandatory written justification (order/ref number).
     Only confirmed findings will forward risk flags into the policy gate.
     """
+    if not justification or not justification.strip():
+        raise ValueError("Officer confirmation requires a non-empty justification note (e.g. court order or reference number).")
+
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     updated_findings = []
     for f in report.findings:
         if f.id == finding_id:
             updated_f = f.model_copy(update={
                 "review_status": ReviewStatus.CONFIRMED,
+                "confirmation_note": justification.strip(),
                 "reviewed_by": officer_name,
                 "reviewed_at": now_iso
             })
@@ -328,6 +352,41 @@ def confirm_adverse_finding(
             updated_findings.append(f)
 
     return report.model_copy(update={"findings": updated_findings})
+
+
+def merge_existing_reviews(
+    new_report: AdverseMediaReport,
+    existing_report: Optional[AdverseMediaReport]
+) -> AdverseMediaReport:
+    """
+    Preserves existing officer determinations (CONFIRMED / DISMISSED) across successive
+    scans by keying reviews by finding ID or URL match, preventing re-scans from wiping reviews.
+    """
+    if not existing_report or not existing_report.findings:
+        return new_report
+
+    review_map: Dict[str, AdverseMediaFinding] = {}
+    for f in existing_report.findings:
+        if f.review_status != ReviewStatus.UNREVIEWED:
+            review_map[f.id] = f
+            if f.source_url:
+                review_map[f.source_url] = f
+
+    merged_findings: List[AdverseMediaFinding] = []
+    for nf in new_report.findings:
+        prior = review_map.get(nf.id) or (review_map.get(nf.source_url) if nf.source_url else None)
+        if prior:
+            merged_findings.append(nf.model_copy(update={
+                "review_status": prior.review_status,
+                "dismissal_reason": prior.dismissal_reason,
+                "confirmation_note": prior.confirmation_note,
+                "reviewed_by": prior.reviewed_by,
+                "reviewed_at": prior.reviewed_at
+            }))
+        else:
+            merged_findings.append(nf)
+
+    return new_report.model_copy(update={"findings": merged_findings})
 
 
 def dismiss_adverse_finding(

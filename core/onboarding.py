@@ -1,3 +1,4 @@
+import os
 import re
 import hashlib
 from datetime import datetime
@@ -153,7 +154,11 @@ def check_entity_consistency(
             "pan": pan_str,
             "is_valid": False,
             "error": err,
-            "consistency_status": "SYNTAX_ERROR"
+            "consistency_status": "SYNTAX_ERROR",
+            "mismatch_detected": False,
+            "pan_entity_char": None,
+            "pan_entity_type": "Invalid Syntax",
+            "warning_message": err,
         }
 
     clean_pan = pan_str.strip().upper()
@@ -190,13 +195,22 @@ def check_entity_consistency(
     }
 
 
-def generate_application_id(company_name: str, date_stamp: Optional[str] = None) -> str:
+def generate_application_id(
+    company_name: str,
+    date_stamp: Optional[str] = None,
+    session_suffix: Optional[str] = None
+) -> str:
     """
-    Generates a deterministic CRM-style tracking key: APP-[YYYYMMDD]-[HASH].
+    Generates a unique CRM-style tracking key: APP-[YYYYMMDD]-[HASH]-[SUFFIX].
     Binds the entire underwriting trace, HITL edits, and CAM export to a single identifier.
+    Includes session/timestamp entropy so multiple sessions on the same day do not collide.
     """
     if not date_stamp:
         date_stamp = datetime.now().strftime("%Y%m%d")
     clean_name = re.sub(r"[^A-Za-z0-9]", "", company_name.upper())
     hash_digest = hashlib.sha256(f"{clean_name}_{date_stamp}".encode("utf-8")).hexdigest()[:6].upper()
+    if session_suffix is None:
+        session_suffix = f"{datetime.now().strftime('%H%M%S')}{os.urandom(2).hex().upper()}"
+    if session_suffix:
+        return f"APP-{date_stamp}-{hash_digest}-{session_suffix}"
     return f"APP-{date_stamp}-{hash_digest}"

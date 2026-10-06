@@ -1,7 +1,12 @@
 from pydantic import BaseModel, Field, field_validator
 from decimal import Decimal, InvalidOperation
-from typing import Optional, Any, List
+from typing import Optional, Any, List, Dict
 from enum import Enum
+
+import re
+
+CRORE_SUFFIX_RE = re.compile(r"^(.*?)\s*(?:crores|crore|cr)\.?$", re.IGNORECASE)
+LAKH_SUFFIX_RE = re.compile(r"^(.*?)\s*(?:lakhs|lakh|lacs|lac)\.?$", re.IGNORECASE)
 
 def coerce_currency(v: Any) -> Decimal:
     """Safely coerces strings, ints, floats, and Indian numbering (Cr/Lakh) into exact Decimals.
@@ -21,13 +26,22 @@ def coerce_currency(v: Any) -> Decimal:
         if v_lower.startswith('(') and v_lower.endswith(')'):
             is_negative = True
             v_lower = v_lower[1:-1].strip()
+
+        if v_lower.startswith("inr"):
+            v_lower = v_lower[3:].strip()
+        elif v_lower.startswith("rs."):
+            v_lower = v_lower[3:].strip()
+        elif v_lower.startswith("rs"):
+            v_lower = v_lower[2:].strip()
             
         try:
-            if "cr" in v_lower or "crore" in v_lower:
-                num = Decimal(v_lower.replace("cr", "").replace("crore", "").strip())
+            m_cr = CRORE_SUFFIX_RE.match(v_lower)
+            m_lk = LAKH_SUFFIX_RE.match(v_lower)
+            if m_cr:
+                num = Decimal(m_cr.group(1).strip())
                 val = num * Decimal("10000000")
-            elif "lakh" in v_lower or "lac" in v_lower:
-                num = Decimal(v_lower.replace("lakh", "").replace("lac", "").strip())
+            elif m_lk:
+                num = Decimal(m_lk.group(1).strip())
                 val = num * Decimal("100000")
             else:
                 val = Decimal(v_lower)
@@ -44,6 +58,9 @@ class BankExtraction(BaseModel):
     closing_balance: Optional[Decimal] = None
     bounce_count: Optional[int] = None
     confidence: str = Field(default="HIGH", pattern="^(HIGH|LOW)$")
+    extraction_engine: Optional[str] = None
+    redaction_events: List[Dict[str, Any]] = Field(default_factory=list)
+    officer_verified: bool = False
 
     @field_validator('total_credits', 'total_debits', 'opening_balance', 'closing_balance', mode='before')
     def parse_money(cls, v):
@@ -55,6 +72,9 @@ class GSTExtraction(BaseModel):
     taxable_value: Optional[Decimal] = None
     total_tax_paid: Optional[Decimal] = None
     confidence: str = Field(default="HIGH", pattern="^(HIGH|LOW)$")
+    extraction_engine: Optional[str] = None
+    redaction_events: List[Dict[str, Any]] = Field(default_factory=list)
+    officer_verified: bool = False
 
     @field_validator('taxable_value', 'total_tax_paid', mode='before')
     def parse_money(cls, v):
@@ -71,6 +91,9 @@ class ITRExtraction(BaseModel):
     total_debt: Optional[Decimal] = None
     existing_emi_obligations: Optional[Decimal] = None
     confidence: str = Field(default="HIGH", pattern="^(HIGH|LOW)$")
+    extraction_engine: Optional[str] = None
+    redaction_events: List[Dict[str, Any]] = Field(default_factory=list)
+    officer_verified: bool = False
 
     @field_validator('gross_total_income', 'profit_after_tax', 'depreciation', 'interest_paid', 'net_worth', 'total_debt', 'existing_emi_obligations', mode='before')
     def parse_money(cls, v):
@@ -81,10 +104,12 @@ class ITRExtraction(BaseModel):
 class CreditCase(BaseModel):
     company_name: str
     cin_or_pan: str
+    pan: Optional[str] = None
     requested_loan_amount: Optional[Decimal] = None
     proposed_emi: Optional[Decimal] = None
     proposed_rate: Optional[Decimal] = None
     proposed_tenure_months: Optional[int] = None
+    officer_verified: bool = False
     
     bank_data: Optional[BankExtraction] = None
     gst_data: Optional[GSTExtraction] = None
@@ -120,6 +145,7 @@ class AdverseMediaFinding(BaseModel):
     source_url: str
     review_status: ReviewStatus = ReviewStatus.UNREVIEWED
     dismissal_reason: Optional[str] = None
+    confirmation_note: Optional[str] = None
     reviewed_by: Optional[str] = None
     reviewed_at: Optional[str] = None
     is_synthetic: bool = False
@@ -132,3 +158,4 @@ class AdverseMediaReport(BaseModel):
     query_used: str = ""
     is_synthetic_demo: bool = False
     error_message: Optional[str] = None
+    disclaimer: Optional[str] = None

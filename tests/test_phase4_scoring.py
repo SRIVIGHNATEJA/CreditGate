@@ -44,7 +44,7 @@ from core.formatting import format_inr
 def create_baseline_prime_case() -> CreditCase:
     """Helper fixture to generate a clean, prime MSME CreditCase."""
     return CreditCase(
-        company_name="Apex Precision Engineering Pvt Ltd",
+        company_name="Apex Synthetic Holdings (Demo)",
         cin_or_pan="U29253DL2018PTC334120",
         requested_loan_amount=Decimal("5000000.00"),
         proposed_emi=Decimal("164880.03"),

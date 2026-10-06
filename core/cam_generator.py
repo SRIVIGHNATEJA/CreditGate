@@ -1,9 +1,10 @@
 import json
+import html
 from decimal import Decimal
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 
-from core.policy import Verdict
+from core.policy import Verdict, WEIGHTS
 from core.data_models import CreditCase, AdverseMediaReport
 from core.scorer import ScoreResult
 from core.formatting import format_inr
@@ -15,6 +16,31 @@ class CamGenerationError(Exception):
     pass
 
 
+def generate_cam_html(cam_markdown: str, app_id: str = "APP-GENERIC-001") -> str:
+    """Renders formal CAM HTML export with all content strictly html-escaped against XSS/injection."""
+    escaped_app_id = html.escape(str(app_id))
+    escaped_content = html.escape(str(cam_markdown))
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>CAM - {escaped_app_id}</title>
+<style>
+body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #1e293b; max-width: 900px; margin: 40px auto; padding: 0 20px; }}
+h1 {{ color: #1e3a8a; border-bottom: 2px solid #2563eb; padding-bottom: 8px; }}
+h2 {{ color: #0f766e; margin-top: 24px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }}
+table {{ border-collapse: collapse; width: 100%; margin: 16px 0; }}
+th, td {{ border: 1px solid #cbd5e1; padding: 8px 12px; text-align: left; }}
+th {{ background-color: #f1f5f9; color: #0f172a; }}
+code {{ background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 2px 4px; border-radius: 4px; }}
+</style>
+</head>
+<body>
+<pre style="white-space: pre-wrap; font-family: inherit;">{escaped_content}</pre>
+</body>
+</html>"""
+
+
 def generate_cam_markdown(
     credit_case: CreditCase,
     score_result: ScoreResult,
@@ -23,12 +49,13 @@ def generate_cam_markdown(
     executive_override: Optional[Dict[str, Any]] = None,
     audit_events: Optional[List[Dict[str, Any]]] = None,
     adverse_media_report: Optional[AdverseMediaReport] = None,
-    app_id: str = "APP-GENERIC-001"
+    app_id: str = "APP-GENERIC-001",
+    pan: Optional[str] = None
 ) -> str:
     """
-    Renders a bank-grade Credit Appraisal Memorandum (CAM) in structured Markdown.
+    Renders a standardized Credit Appraisal Memorandum (CAM) in structured Markdown.
     Guarantees:
-    - Zero raw unmasked PANs (strictly masked for RBI PII compliance).
+    - Zero raw unmasked PANs (strictly masked for PII compliance).
     - Standard Indian Rupee Lakhs/Crores currency formatting.
     - Full score deduction rule IDs and auditable trail.
     - Blocks CAM generation if Verdict is INSUFFICIENT_DATA.
@@ -44,15 +71,17 @@ def generate_cam_markdown(
     itr = credit_case.itr_data
 
     # PII Sanitization
-    raw_pan = credit_case.cin_or_pan
-    masked_pan = mask_identifier(raw_pan)
+    raw_pan = pan or getattr(credit_case, "pan", None)
+    if not raw_pan and credit_case.cin_or_pan and len(credit_case.cin_or_pan) == 10:
+        raw_pan = credit_case.cin_or_pan
+    masked_pan = mask_identifier(raw_pan) if raw_pan else "NOT_PROVIDED"
 
     # Determine final effective verdict
     effective_verdict = score_result.final_verdict.name
     verdict_badge = f"**{effective_verdict}**"
     if executive_override and executive_override.get("override_active"):
         veto_verdict = executive_override.get("override_verdict", effective_verdict)
-        verdict_badge = f"**{veto_verdict} (EXECUTIVE OVERRIDE APPLIED)**"
+        verdict_badge = f"**{veto_verdict} (Overridden by officer)**"
 
     now_str = datetime.now(timezone.utc).strftime("%d %B %Y, %H:%M UTC")
 
@@ -65,7 +94,7 @@ def generate_cam_markdown(
     # 1. Executive Summary & Borrower Profile
     md.append("## 1. BORROWER ENTITY PROFILE")
     md.append(f"- **Borrower Name:** {credit_case.company_name}")
-    md.append(f"- **Permanent Account Number (PAN):** `{masked_pan}` *(Masked under RBI Digital Lending Norms)*")
+    md.append(f"- **Permanent Account Number (PAN):** `{masked_pan}` *(PII masked)*")
     
     if cin_parsed_data and cin_parsed_data.get("cin") != "UNREGISTERED_MSME":
         md.append(f"- **Corporate Identification Number (CIN):** `{cin_parsed_data.get('cin')}`")
@@ -115,11 +144,13 @@ def generate_cam_markdown(
     md.append("## 4. CORE SOLVENCY & COVERAGE RATIOS")
     md.append(f"- **Operating DSCR:** `{score_result.dscr:.2f}x` *(Benchmark >= 1.20x hurdle, >= 1.50x prime)*")
     md.append("  - *Formula:* `(PAT + Depreciation + Interest Paid) / (Existing EMIs + Proposed EMI)` (Strict single-count interest math).")
-    if itr and itr.net_worth and itr.net_worth > Decimal("0"):
+    if itr and itr.net_worth and itr.net_worth > Decimal("0") and itr.total_debt is not None:
         de = (itr.total_debt / itr.net_worth).quantize(Decimal("0.01"))
         md.append(f"- **Gearing / Debt-to-Equity (D/E):** `{de:.2f}x` *(Benchmark <= 1.0x prime, <= 3.0x acceptable)*")
-    else:
+    elif itr and itr.net_worth and itr.net_worth <= Decimal("0"):
         md.append("- **Gearing / Debt-to-Equity (D/E):** `CRITICAL` (Negative or zero Net Worth)")
+    else:
+        md.append("- **Gearing / Debt-to-Equity (D/E):** `N/A` (Incomplete Data)")
     
     if g and b:
         max_turn = max(g.taxable_value or Decimal("0"), b.total_credits or Decimal("0"))
@@ -136,14 +167,16 @@ def generate_cam_markdown(
     md.append("| Pillar | Weight | Score (/100) | Policy Status |")
     md.append("|:---|:---|:---|:---|")
     for pillar, sc in score_result.five_cs.items():
+        weight_val = WEIGHTS.get(pillar, Decimal("0.20"))
+        weight_str = f"{int(weight_val * 100)}%"
         status = "✅ Pristine" if sc >= Decimal("70.0") else ("⚠️ Moderate" if sc >= Decimal("40.0") else "🚨 Weakest-Link Cap (< 40)")
-        md.append(f"| **{pillar}** | 20% | {sc:.1f} | {status} |")
+        md.append(f"| **{pillar}** | {weight_str} | {sc:.1f} | {status} |")
     md.append("")
 
     # 6. Auditable Score Deductions Trail
     md.append("## 6. AUDITABLE SCORE DEDUCTION TRAIL")
     if score_result.deductions:
-        md.append("| Rule ID | Pillar | Penalty | Observed Value | Threshold | Forensic Explanation |")
+        md.append("| Rule ID | Pillar | Penalty | Observed Value | Threshold | Policy Rationale |")
         md.append("|:---|:---|:---|:---|:---|:---|")
         for d in score_result.deductions:
             md.append(f"| `{d.rule_id}` | {d.pillar} | -{d.points_deducted:.1f} pts | {d.observed_value} | {d.threshold} | {d.explanation} |")
@@ -158,10 +191,10 @@ def generate_cam_markdown(
         err_msg = adverse_media_report.error_message if adverse_media_report and adverse_media_report.error_message else "API unconfigured, network timeout, or offline mode."
         md.append(f"> ⚠️ **RESEARCH_UNAVAILABLE:** External secondary research could not be completed ({err_msg}). Under bank policy, the Credit Officer must conduct independent MCA registry and court docket due diligence prior to loan sanction.")
     elif adverse_media_report.status == "NO_ADVERSE_FINDINGS":
-        md.append("- **Screening Module Status:** `CLEAN (No Adverse Findings)`")
+        md.append("- **Screening Module Status:** `NO_ADVERSE_FINDINGS`")
         if adverse_media_report.query_used:
             md.append(f"- **Anchored Search Query:** `{adverse_media_report.query_used}`")
-        md.append("- **Findings Summary:** Zero adverse news, statutory summons, or insolvency petitions detected for the applicant entity.")
+        md.append("> *No adverse findings in screened sources; this is not a legal clearance.*")
     elif adverse_media_report.status == "COMPLETED":
         md.append("- **Screening Module Status:** `COMPLETED`")
         if adverse_media_report.query_used:
@@ -174,10 +207,10 @@ def generate_cam_markdown(
             md.append("|:---|:---|:---|:---|:---|")
             for f in adverse_media_report.findings:
                 status_badge = f"`{f.review_status.value}`"
-                notes = f.dismissal_reason if f.review_status == "DISMISSED" else (f"Confirmed by {f.reviewed_by}" if f.review_status == "CONFIRMED" else "Awaiting Officer Review")
+                notes = f.dismissal_reason if f.review_status == "DISMISSED" else (f"Confirmed: {f.confirmation_note or f.reviewed_by}" if f.review_status == "CONFIRMED" else "Awaiting Officer Review")
                 md.append(f"| {f.title} | `{f.tier.value}` | [{f.source_url}]({f.source_url}) | {status_badge} | {notes} |")
         else:
-            md.append("*No material adverse findings recorded.*")
+            md.append("> *No adverse findings in screened sources; this is not a legal clearance.*")
     md.append("")
 
     # 8. Policy Gate Evaluation & Weakest-Link Analysis
@@ -197,22 +230,22 @@ def generate_cam_markdown(
     if officer_notes:
         md.append("### Field Visit Observations")
         for idx, n in enumerate(officer_notes, 1):
-            md.append(f"{idx}. **[{n.get('affected_c', 'GENERAL')}]** {n.get('note_text', '')} *(Adjustment: {n.get('adjustment', 0)} pts, Recorded: {n.get('timestamp', '')})*")
+            md.append(f"{idx}. **[{n.get('affected_c', 'GENERAL')}]** {n.get('note_text', '')} *(Recorded: {n.get('timestamp', '')})*")
     else:
         md.append("*No manual field visit observations appended.*")
 
     if executive_override and executive_override.get("override_active"):
         md.append("")
-        md.append("### ⚠️ Executive Veto Justification (Credit Committee Override)")
+        md.append("### ⚠️ EXECUTIVE OVERRIDE APPLIED (Credit Committee Override)")
         md.append(f"- **Original System Verdict:** `{score_result.final_verdict.name}`")
         md.append(f"- **Executive Override Verdict:** `{executive_override.get('override_verdict', 'N/A')}`")
-        md.append(f"- **Overriding Officer / Authority:** `{executive_override.get('officer_name', 'Credit Risk Committee')}`")
+        md.append(f"- **Overriding Officer Role:** `{executive_override.get('officer_name', 'Credit Risk Committee')} (simulated role)`")
         md.append(f"- **Mandatory Written Justification:** \"{executive_override.get('justification_text', '')}\"")
         md.append(f"- **Veto Recorded Timestamp:** `{executive_override.get('timestamp', '')}`")
     md.append("")
 
-    # 10. Forensic Audit Trail Appendix
-    md.append("## 10. APPENDIX: FORENSIC AUDIT TRAIL (CHRONOLOGICAL EVENT STREAM)")
+    # 10. Session Audit Trail Appendix
+    md.append("## 10. APPENDIX: SESSION AUDIT TRAIL (CHRONOLOGICAL EVENT STREAM)")
     if audit_events:
         md.append("| Timestamp | Event Type | Actor | Severity | Summary Details |")
         md.append("|:---|:---|:---|:---|:---|")

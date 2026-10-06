@@ -56,7 +56,7 @@ def test_onboarding_and_audit():
     print(f"  • Mismatch Trap Detection : PASSED (Caught Individual PAN 'P' for Corp loan)")
 
     # 4. Test Application ID Generation
-    app_id = generate_application_id("Apex Precision Tools", "20260915")
+    app_id = generate_application_id("Apex Synthetic Holdings (Demo)", "20260915")
     assert app_id.startswith("APP-20260915-")
     print(f"  • CRM Application Key Gen : PASSED ({app_id})")
 

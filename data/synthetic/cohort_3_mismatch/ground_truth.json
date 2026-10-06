@@ -1,0 +1,27 @@
+{
+  "cohort": "cohort_3_mismatch",
+  "company_name": "Bharat Mock Steels & Infra (Demo)",
+  "cin": "AAB-4921",
+  "pan": "AABFB8910N",
+  "gstin": "27AABFB8910N1Z8",
+  "bank": {
+    "opening_balance": "1580000.00",
+    "total_credits": "88000000.00",
+    "total_debits": "85000000.00",
+    "closing_balance": "4580000.00",
+    "bounce_count": 1
+  },
+  "gst": {
+    "taxable_value": "45000000.00",
+    "total_tax_paid": "8100000.00"
+  },
+  "itr": {
+    "gross_total_income": "45000000.00",
+    "profit_after_tax": "3500000.00",
+    "depreciation": "1500000.00",
+    "interest_paid": "2000000.00",
+    "net_worth": "18000000.00",
+    "total_debt": "14000000.00",
+    "existing_emi_obligations": "2500000.00"
+  }
+}

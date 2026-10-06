@@ -17,7 +17,7 @@ from core.formatting import format_inr
 
 def create_test_credit_case(raw_pan: str = "AAACA1234B") -> CreditCase:
     return CreditCase(
-        company_name="Apex Precision Engineering Pvt Ltd",
+        company_name="Apex Synthetic Holdings (Demo)",
         cin_or_pan=raw_pan,
         requested_loan_amount=Decimal("5000000.00"),
         proposed_emi=Decimal("164880.03"),

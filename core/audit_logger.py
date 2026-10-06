@@ -3,14 +3,14 @@ import re
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 OUTPUTS_DIR = BASE_DIR / "outputs"
 
 
 def mask_identifier(val: str, id_type: str = "PAN") -> str:
-    """Masks sensitive PII before persistence in immutable audit event streams."""
+    """Masks sensitive PII before persistence in append-only audit event streams."""
     if not val:
         return "N/A"
     clean = str(val).strip()
@@ -48,16 +48,29 @@ def sanitize_audit_payload(details: Dict[str, Any]) -> Dict[str, Any]:
     return sanitized
 
 
+import hashlib
+
+
+def compute_event_hash(event_data: Dict[str, Any]) -> str:
+    """Computes SHA-256 hash over canonical JSON representation of event fields."""
+    payload = {k: v for k, v in event_data.items() if k != "event_hash"}
+    canonical_json = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+
+
 class AuditLogger:
     """
-    Append-only Event Sourcing Logger for MSME Credit Underwriting.
-    Guarantees forensic traceability from initial onboarding through HITL edits and final CAM generation.
+    Tamper-evident append-only event sourcing logger for MSME credit underwriting.
+    Maintains a SHA-256 hash chain across chronological events.
+    Notice: This is tamper-evident (detects modifications), not tamper-proof.
     """
 
-    def __init__(self, app_id: str):
+    def __init__(self, app_id: str, log_dir: Optional[Path] = None):
         self.app_id = app_id
-        OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
-        self.log_file = OUTPUTS_DIR / f"audit_trail_{self.app_id}.jsonl"
+        target_dir = log_dir or OUTPUTS_DIR
+        target_dir.mkdir(parents=True, exist_ok=True)
+        self.log_file = target_dir / f"audit_trail_{self.app_id}.jsonl"
+        self.log_path = self.log_file
 
     def log(
         self,
@@ -66,16 +79,21 @@ class AuditLogger:
         details: Dict[str, Any],
         severity: str = "INFO"
     ) -> Dict[str, Any]:
-        """Appends a cryptographically timestamped audit event."""
+        """Appends a tamper-evident audit event bound to the previous event hash."""
         sanitized_details = sanitize_audit_payload(details)
+        prev_events = self.load_events()
+        prev_hash = prev_events[-1].get("event_hash", "GENESIS") if prev_events else "GENESIS"
+
         event = {
             "timestamp": datetime.now().isoformat(),
             "app_id": self.app_id,
             "event_type": event_type,
             "actor": actor,
             "severity": severity,
-            "details": sanitized_details
+            "details": sanitized_details,
+            "prev_hash": prev_hash
         }
+        event["event_hash"] = compute_event_hash(event)
 
         # Thread-safe append to JSONL disk file
         try:
@@ -101,6 +119,55 @@ class AuditLogger:
                     except json.JSONDecodeError:
                         continue
         return events
+
+    def verify_chain(self, events: Optional[List[Dict[str, Any]]] = None) -> Tuple[bool, Optional[str]]:
+        """Verifies the tamper-evident SHA-256 hash chain across chronological events."""
+        return verify_chain(events if events is not None else self.load_events())
+
+
+def verify_chain(target: Any) -> Tuple[bool, Optional[str]]:
+    """
+    Verifies the tamper-evident SHA-256 hash chain across chronological events.
+    Accepts a file path (str or Path) or a list of event dictionaries.
+    Returns (is_valid, error_reason).
+    """
+    if isinstance(target, (str, Path)):
+        p = Path(target)
+        if not p.exists():
+            return False, f"Audit log file not found: {p}"
+        events = []
+        with open(p, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        events.append(json.loads(line))
+                    except json.JSONDecodeError as e:
+                        return False, f"Corrupted JSON line: {e}"
+        evts = events
+    elif isinstance(target, list):
+        evts = target
+    else:
+        return False, f"Invalid target type for verify_chain: {type(target)}"
+
+    if not evts:
+        return True, None
+
+    for idx, evt in enumerate(evts):
+        if "event_hash" not in evt:
+            return False, f"Event at index {idx} missing event_hash"
+
+        stored_hash = evt["event_hash"]
+        expected_hash = compute_event_hash(evt)
+        if stored_hash != expected_hash:
+            return False, f"Hash mismatch at sequence {idx}: payload tampered (stored={stored_hash}, computed={expected_hash})"
+
+        expected_prev = "GENESIS" if idx == 0 else evts[idx - 1].get("event_hash")
+        actual_prev = evt.get("prev_hash")
+        if actual_prev != expected_prev:
+            return False, f"Broken chain link at sequence {idx}: prev_hash={actual_prev}, expected={expected_prev}"
+
+    return True, None
 
 
 def log_event(

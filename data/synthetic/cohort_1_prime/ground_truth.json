@@ -1,0 +1,27 @@
+{
+  "cohort": "cohort_1_prime",
+  "company_name": "Apex Synthetic Holdings (Demo)",
+  "cin": "U29253DL2018PTC334120",
+  "pan": "AAACA1234B",
+  "gstin": "07AAACA1234B1Z5",
+  "bank": {
+    "opening_balance": "4520500.00",
+    "total_credits": "125000000.00",
+    "total_debits": "118000000.00",
+    "closing_balance": "11520500.00",
+    "bounce_count": 0
+  },
+  "gst": {
+    "taxable_value": "124500000.00",
+    "total_tax_paid": "22410000.00"
+  },
+  "itr": {
+    "gross_total_income": "124500000.00",
+    "profit_after_tax": "12000000.00",
+    "depreciation": "3000000.00",
+    "interest_paid": "2500000.00",
+    "net_worth": "65000000.00",
+    "total_debt": "18000000.00",
+    "existing_emi_obligations": "4000000.00"
+  }
+}

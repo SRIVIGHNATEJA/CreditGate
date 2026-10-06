@@ -45,7 +45,7 @@ def _safe_serialize_val(val: Any) -> Any:
 
 @dataclass
 class ScoreDeduction:
-    """Structured record of an auditable score deduction for forensic explainability."""
+    """Structured record of an auditable score deduction for policy explainability."""
     rule_id: str
     pillar: str
     points_deducted: Decimal
@@ -145,6 +145,9 @@ def final_policy_gate(
     flags = severe_flags if severe_flags is not None else (research_findings if research_findings is not None else [])
 
     if isinstance(target, ScoreResult):
+        if target.baseline_verdict == Verdict.INSUFFICIENT_DATA or target.final_verdict == Verdict.INSUFFICIENT_DATA:
+            return target
+
         # Pure copy & update of existing ScoreResult
         bounce_val = 0
         for d in target.deductions:
@@ -319,7 +322,7 @@ def score_credit_case(
 ) -> ScoreResult:
     """
     Computes preliminary Five Cs score and applies the Final Policy Gate.
-    100% deterministic Python Decimal math. Zero LLM hallucinations.
+    100% deterministic Python Decimal arithmetic.
     Routes missing top-level or field-level data to INSUFFICIENT_DATA path without exceptions.
     """
     missing = check_missing_financial_fields(credit_case)
@@ -477,26 +480,30 @@ def score_credit_case(
     # ------------------------------------------------------------------------
     # 4. COLLATERAL (Weight: 15%)
     # ------------------------------------------------------------------------
-    if cgtmse_covered and collateral_value == Decimal("0"):
-        # CGTMSE Exemption: Government credit guarantee covers the facility
-        collateral_score = Decimal("75.0")
+    if credit_case.requested_loan_amount <= Decimal("0"):
+        coverage = Decimal("Infinity") if collateral_value > Decimal("0") else Decimal("0.00")
     else:
         coverage = (collateral_value / credit_case.requested_loan_amount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        collateral_score = Decimal("20.0")
-        for min_cov, max_cov, score_val in COLLATERAL_COVERAGE_BANDS:
-            if min_cov <= coverage < max_cov or (max_cov == Decimal("Infinity") and coverage >= min_cov):
-                collateral_score = score_val
-                break
+    calculated_coverage_score = Decimal("20.0")
+    for min_cov, max_cov, score_val in COLLATERAL_COVERAGE_BANDS:
+        if min_cov <= coverage < max_cov or (max_cov == Decimal("Infinity") and coverage >= min_cov):
+            calculated_coverage_score = score_val
+            break
 
-        if collateral_score < Decimal("100.0"):
-            deductions.append(ScoreDeduction(
-                rule_id="RULE_COLLATERAL_COVERAGE",
-                pillar="COLLATERAL",
-                points_deducted=Decimal("100.0") - collateral_score,
-                observed_value=f"{coverage:.2f}x Coverage",
-                threshold=">= 1.25x",
-                explanation="Pledged tangible security does not fully satisfy 1.25x collateral cover"
-            ))
+    if cgtmse_covered:
+        collateral_score = max(Decimal("75.0"), calculated_coverage_score)
+    else:
+        collateral_score = calculated_coverage_score
+
+    if not (cgtmse_covered and collateral_value == Decimal("0")) and collateral_score < Decimal("100.0"):
+        deductions.append(ScoreDeduction(
+            rule_id="RULE_COLLATERAL_COVERAGE",
+            pillar="COLLATERAL",
+            points_deducted=Decimal("100.0") - collateral_score,
+            observed_value=f"{coverage:.2f}x Coverage",
+            threshold=">= 1.25x",
+            explanation="Pledged tangible security does not fully satisfy 1.25x collateral cover"
+        ))
 
     # ------------------------------------------------------------------------
     # 5. CONDITIONS (Weight: 15%)
