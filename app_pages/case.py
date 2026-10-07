@@ -35,7 +35,8 @@ g_col1, g_col2, g_col3 = st.columns(3)
 
 with g_col1:
     with st.container(border=True):
-        st.markdown('<div style="height: 3px; background: #15803D; border-radius: 2px; margin-bottom: 8px;"></div>', unsafe_allow_html=True)
+        st.markdown('<div style="height: 3px; background: #15803D; border-radius: 2px; margin-bottom: 6px;"></div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size: 10px; font-weight: 700; color: #15803D; letter-spacing: 0.05em; text-transform: uppercase;">Archetype: Tier-1 Prime MSME</div>', unsafe_allow_html=True)
         c1_chip = f" &nbsp; {status_pill('ACTIVE', variant='info')}" if is_c1 else ""
         st.markdown(f"**1. Prime MSME**{c1_chip}", unsafe_allow_html=True)
         st.markdown(f"**Apex Synthetic Holdings (Demo)** &nbsp; {status_pill('APPROVE', variant='approve')}", unsafe_allow_html=True)
@@ -51,7 +52,8 @@ with g_col1:
 
 with g_col2:
     with st.container(border=True):
-        st.markdown('<div style="height: 3px; background: #B91C1C; border-radius: 2px; margin-bottom: 8px;"></div>', unsafe_allow_html=True)
+        st.markdown('<div style="height: 3px; background: #B91C1C; border-radius: 2px; margin-bottom: 6px;"></div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size: 10px; font-weight: 700; color: #B91C1C; letter-spacing: 0.05em; text-transform: uppercase;">Archetype: Distressed Logistics</div>', unsafe_allow_html=True)
         c2_chip = f" &nbsp; {status_pill('ACTIVE', variant='info')}" if is_c2 else ""
         st.markdown(f"**2. Distressed**{c2_chip}", unsafe_allow_html=True)
         st.markdown(f"**Kaveri Fictitious Freight (Demo)** &nbsp; {status_pill('REJECT', variant='reject')}", unsafe_allow_html=True)
@@ -67,7 +69,8 @@ with g_col2:
 
 with g_col3:
     with st.container(border=True):
-        st.markdown('<div style="height: 3px; background: #B45309; border-radius: 2px; margin-bottom: 8px;"></div>', unsafe_allow_html=True)
+        st.markdown('<div style="height: 3px; background: #B45309; border-radius: 2px; margin-bottom: 6px;"></div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size: 10px; font-weight: 700; color: #B45309; letter-spacing: 0.05em; text-transform: uppercase;">Archetype: High-Turnover Trader</div>', unsafe_allow_html=True)
         c3_chip = f" &nbsp; {status_pill('ACTIVE', variant='info')}" if is_c3 else ""
         st.markdown(f"**3. Mismatch Trap**{c3_chip}", unsafe_allow_html=True)
         st.markdown(f"**Bharat Mock Steels & Infra (Demo)** &nbsp; {status_pill('CONDITIONAL', variant='conditional')}", unsafe_allow_html=True)

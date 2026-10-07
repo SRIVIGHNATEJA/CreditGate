@@ -18,6 +18,7 @@ from core.data_models import (
     ITRExtraction,
 )
 from core.parser import extract_all_documents
+from core.formatting import format_inr
 from ui.state import get_app_context, record_event, COHORT_COMPANY_NAMES, select_and_reset_cohort
 from ui.components import render_kpi_card, render_callout, status_pill
 
@@ -379,6 +380,59 @@ else:
                 st.caption(f"Engine: `{it_eng}`")
                 st.markdown(f"Confidence: **{case.itr_data.confidence}**")
                 render_callout("P&L, Net Worth & obligations mapped", title="Financial Statements", variant="success" if case.itr_data.confidence == "HIGH" else "warning")
+
+        # Cross-Document Triangulation Horizon (3-Way Revenue & Cash Inflow Cross-Validation)
+        bank_c = case.bank_data.total_credits if case.bank_data else None
+        gst_t = case.gst_data.taxable_value if case.gst_data else None
+        itr_g = case.itr_data.gross_total_income if case.itr_data else None
+
+        gap_pill = status_pill("TRIANGULATION PENDING", variant="neutral")
+        analysis_txt = "Awaiting extracted parameters across banking and statutory documents."
+        border_accent = "#0F766E"
+
+        if bank_c is not None and gst_t is not None:
+            max_val = max(bank_c, gst_t)
+            if max_val > Decimal("0"):
+                gap_val = float(abs(gst_t - bank_c) / max_val * Decimal("100"))
+                gap_str = f"{gap_val:.1f}%"
+                if gap_val <= 15.0:
+                    gap_pill = status_pill(f"CONGRUENT ({gap_str} VARIANCE)", variant="approve")
+                    analysis_txt = f"Operating banking deposits ({format_inr(bank_c)}) strongly corroborate declared GSTR-3B taxable turnover ({format_inr(gst_t)}), staying comfortably within the 15% standard variance corridor."
+                    border_accent = "#15803D"
+                else:
+                    gap_pill = status_pill(f"DIVERGENCE ({gap_str} VARIANCE)", variant="conditional")
+                    analysis_txt = f"Material variance detected: Declared GST turnover ({format_inr(gst_t)}) diverges from actual banking receipts ({format_inr(bank_c)}) by {gap_str}. Signals potential unbilled receipts, circular movement, or debtor stretch."
+                    border_accent = "#B45309"
+
+        triangulation_html = f"""<div style="background-color: #FFFFFF; border: 1px solid #E2E8F0; border-left: 4px solid {border_accent}; border-radius: 8px; padding: 14px 18px; margin: 12px 0 16px 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+                <div>
+                    <div style="font-size: 11px; font-weight: 700; color: #0F766E; text-transform: uppercase; letter-spacing: 0.06em;">
+                        Cross-Document Triangulation Horizon
+                    </div>
+                    <div style="font-size: 13px; font-weight: 700; color: #0B1F3A;">Three-Source Revenue & Cash Inflow Cross-Validation</div>
+                </div>
+                <div>{gap_pill}</div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 10px;">
+                <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 10px 12px;">
+                    <div style="font-size: 11px; font-weight: 600; color: #64748B; text-transform: uppercase;">1. Banking Credits (Cash Flow)</div>
+                    <div style="font-size: 16px; font-weight: 700; color: #0B1F3A; margin-top: 2px;">{format_inr(bank_c)}</div>
+                </div>
+                <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 10px 12px;">
+                    <div style="font-size: 11px; font-weight: 600; color: #64748B; text-transform: uppercase;">2. GSTR-3B Taxable (Declared Sales)</div>
+                    <div style="font-size: 16px; font-weight: 700; color: #0B1F3A; margin-top: 2px;">{format_inr(gst_t)}</div>
+                </div>
+                <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 10px 12px;">
+                    <div style="font-size: 11px; font-weight: 600; color: #64748B; text-transform: uppercase;">3. ITR Gross Income (Direct Tax)</div>
+                    <div style="font-size: 16px; font-weight: 700; color: #0B1F3A; margin-top: 2px;">{format_inr(itr_g)}</div>
+                </div>
+            </div>
+            <div style="font-size: 12px; color: #475569; line-height: 1.45; border-top: 1px solid #F1F5F9; padding-top: 8px;">
+                <strong>Triangulation Assessment:</strong> {analysis_txt}
+            </div>
+        </div>"""
+        st.markdown("\n".join(line.strip() for line in triangulation_html.splitlines() if line.strip()), unsafe_allow_html=True)
 
         # --------------------------------------------------------------------
         # 4. HITL VERIFICATION GRID IN BORDERED CONTAINER

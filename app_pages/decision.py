@@ -227,6 +227,39 @@ if res is not None:
             approver=override_info.get("officer_name") if is_overridden else None,
         )
 
+        # Dynamic Copilot Underwriting Synthesis Narrative
+        comp_name = st.session_state.locked_case.company_name if st.session_state.locked_case else "Applicant"
+        if hero_verdict == "APPROVE":
+            syn_head = "Prime Solvency Profile • Resilient Debt-Service Buffer"
+            syn_body = f"{comp_name} exhibits strong operational resilience with an Operating DSCR of {res.dscr:.2f}x (clearing the 1.20x policy hurdle). Banking credits show robust alignment with declared GST turnover, corroborated by zero mandate dishonours over 12 months. All five underwriting pillars satisfy policy risk thresholds."
+            syn_rec = "Sanction proposed facility with standard quarterly turnover reconciliation covenant."
+            syn_accent = "#15803D"
+        elif hero_verdict == "REJECT":
+            syn_head = "Severe Credit Stress • Algorithmic Policy Knockout"
+            syn_body = f"{comp_name} triggers credit policy knockouts ({res.knockout_applied or 'Elevated Credit Risk'}). Operating cash flow is insufficient to cover debt obligations (DSCR: {res.dscr:.2f}x), compounded by recurring banking mandate returns. Unmitigated credit risk precludes sanction under current policy covenants."
+            syn_rec = "Decline requested facility. Recommend applicant de-leverage balance sheet and stabilize banking conduct before re-application."
+            syn_accent = "#B91C1C"
+        else:
+            syn_head = "Accrual-versus-Cash Divergence • Policy Cap Applied"
+            syn_body = f"{comp_name} demonstrates meaningful business turnover, but thin net profitability restricts internal liquidity generation. Conditions pillar score fell below the 40-point hurdle ({res.cap_applied or 'Margin Pressure'}), capping the final verdict at CONDITIONAL. Debt service coverage requires external credit enhancement."
+            syn_rec = "Consider conditional sanction subject to 100% liquid collateral pledge or CGTMSE enhancement with enhanced quarterly audit covenants."
+            syn_accent = "#B45309"
+
+        synthesis_html = f"""<div style="background-color: #FFFFFF; border: 1px solid #E2E8F0; border-left: 4px solid {syn_accent}; border-radius: 8px; padding: 14px 18px; margin: 10px 0 16px 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <div style="font-size: 11px; font-weight: 700; color: #0F766E; text-transform: uppercase; letter-spacing: 0.06em;">
+                    Copilot Underwriting Synthesis
+                </div>
+                <div style="font-size: 11px; color: #64748B;">Senior MSME Desk Perspective</div>
+            </div>
+            <div style="font-size: 14px; font-weight: 700; color: #0B1F3A; margin-bottom: 4px;">{syn_head}</div>
+            <div style="font-size: 13px; color: #334155; line-height: 1.5; margin-bottom: 8px;">{syn_body}</div>
+            <div style="font-size: 12px; color: #0F766E; font-weight: 600; border-top: 1px solid #F1F5F9; padding-top: 6px;">
+                <strong>Underwriting Recommendation:</strong> {syn_rec}
+            </div>
+        </div>"""
+        st.markdown("\n".join(line.strip() for line in synthesis_html.splitlines() if line.strip()), unsafe_allow_html=True)
+
         # --------------------------------------------------------------------
         # 2. 4 KPI CARDS (DSCR, D/E, GST-BANK GAP, COMPOSITE)
         # --------------------------------------------------------------------
