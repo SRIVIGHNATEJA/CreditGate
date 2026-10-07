@@ -96,3 +96,28 @@ def test_app_py_no_emojis_in_tabs_or_titles():
     disallowed_emojis = ["🏢", "🤖", "⚖️", "📑", "📜", "🚀", "🔒", "🔄", "🔎", "🛡️", "⚡", "💡", "💰", "📂"]
     for emoji in disallowed_emojis:
         assert emoji not in app_text, f"Emoji {emoji} found in app.py; should be replaced with Material icon"
+
+
+def test_ui_components_no_commonmark_code_block_indents():
+    """Verifies that all generated component HTML has zero lines starting with 4+ spaces,
+    preventing CommonMark indented code block leakage."""
+    from ui.components import verdict_hero_card, callout, kpi_card
+
+    for v in ["APPROVE", "CONDITIONAL", "REJECT"]:
+        for overridden in [False, True]:
+            html = verdict_hero_card(
+                v, 95.0, "Rule test", "Explanation",
+                overridden=overridden,
+                baseline_verdict="APPROVE",
+                approver="Officer"
+            )
+            for line in html.splitlines():
+                assert not line.startswith("    "), f"Line starts with 4+ spaces: {repr(line)}"
+
+    for title in [None, "Title"]:
+        for line in callout("Message", title=title).splitlines():
+            assert not line.startswith("    "), f"callout line starts with 4+ spaces: {repr(line)}"
+
+    for delta in [None, "Delta"]:
+        for line in kpi_card("Label", "Value", delta=delta).splitlines():
+            assert not line.startswith("    "), f"kpi_card line starts with 4+ spaces: {repr(line)}"

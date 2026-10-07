@@ -27,44 +27,54 @@ if st.session_state.get("lock_cleared_message"):
 # ----------------------------------------------------------------------------
 # 1. CASE GALLERY (LANDING VIEW: 3 CARDS + COHORT SELECTOR)
 # ----------------------------------------------------------------------------
+is_c1 = (cohort_selection == "Cohort 1: Prime MSME (Apex Synthetic Demo)")
+is_c2 = (cohort_selection == "Cohort 2: Distressed (Kaveri Fictitious Demo)")
+is_c3 = (cohort_selection == "Cohort 3: Mismatch Trap (Bharat Mock Demo)")
+
 g_col1, g_col2, g_col3 = st.columns(3)
 
 with g_col1:
     with st.container(border=True):
-        st.markdown("**1. Prime MSME**")
+        c1_chip = f" &nbsp; {status_pill('ACTIVE', variant='info')}" if is_c1 else ""
+        st.markdown(f"**1. Prime MSME**{c1_chip}", unsafe_allow_html=True)
         st.markdown(f"**Apex Synthetic Holdings (Demo)** &nbsp; {status_pill('APPROVE', variant='approve')}", unsafe_allow_html=True)
         st.caption("Deciding Signal: Clean banking, 0 mandate bounces, DSCR 1.62x, balanced ledger.")
         st.button(
-            "Open Case",
+            "Selected (Active)" if is_c1 else "Open Case",
             key="btn_open_prime",
             on_click=select_and_reset_cohort,
             args=("Cohort 1: Prime MSME (Apex Synthetic Demo)",),
+            type="primary" if is_c1 else "secondary",
             width="stretch",
         )
 
 with g_col2:
     with st.container(border=True):
-        st.markdown("**2. Distressed**")
+        c2_chip = f" &nbsp; {status_pill('ACTIVE', variant='info')}" if is_c2 else ""
+        st.markdown(f"**2. Distressed**{c2_chip}", unsafe_allow_html=True)
         st.markdown(f"**Kaveri Fictitious Freight (Demo)** &nbsp; {status_pill('REJECT', variant='reject')}", unsafe_allow_html=True)
         st.caption("Deciding Signal: 5 mandate bounces enforce hard policy knockout (BOUNCE_KNOCKOUT).")
         st.button(
-            "Open Case",
+            "Selected (Active)" if is_c2 else "Open Case",
             key="btn_open_distressed",
             on_click=select_and_reset_cohort,
             args=("Cohort 2: Distressed (Kaveri Fictitious Demo)",),
+            type="primary" if is_c2 else "secondary",
             width="stretch",
         )
 
 with g_col3:
     with st.container(border=True):
-        st.markdown("**3. Mismatch Trap**")
+        c3_chip = f" &nbsp; {status_pill('ACTIVE', variant='info')}" if is_c3 else ""
+        st.markdown(f"**3. Mismatch Trap**{c3_chip}", unsafe_allow_html=True)
         st.markdown(f"**Bharat Mock Steels & Infra (Demo)** &nbsp; {status_pill('CONDITIONAL', variant='conditional')}", unsafe_allow_html=True)
         st.caption("Deciding Signal: ₹14.5 Cr turnover vs thin ₹18L PAT triggers WEAKEST_LINK_CAP (< 40.0).")
         st.button(
-            "Open Case",
+            "Selected (Active)" if is_c3 else "Open Case",
             key="btn_open_mismatch",
             on_click=select_and_reset_cohort,
             args=("Cohort 3: Mismatch Trap (Bharat Mock Demo)",),
+            type="primary" if is_c3 else "secondary",
             width="stretch",
         )
 
@@ -259,6 +269,7 @@ with col_facility:
             subtext="Banking Annuity Formula",
             tooltip="P*r*(1+r)^n / ((1+r)^n - 1)",
         )
+        st.caption(":material/info: Click **Apply Facility Terms** to persist parameter changes and recalculate EMI.")
 
 # ----------------------------------------------------------------------------
 # 3. ONBOARDING AUDIT & NAVIGATION

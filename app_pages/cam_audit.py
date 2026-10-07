@@ -86,11 +86,11 @@ with tab_cam:
             st.markdown("---")
             st.markdown("#### Live Memorandum Preview")
 
-            # Memo in a bordered container with readable max-width
-            st.markdown('<div style="max-width: 860px; margin: 0 auto;">', unsafe_allow_html=True)
-            with st.container(border=True):
-                st.markdown(st.session_state.cam_markdown)
-            st.markdown('</div>', unsafe_allow_html=True)
+            # Memo in a bordered container with centered readable width
+            col_pad_l, col_cam, col_pad_r = st.columns([1, 10, 1])
+            with col_cam:
+                with st.container(border=True):
+                    st.markdown(st.session_state.cam_markdown)
 
 # ============================================================================
 # SUB-TAB 2: LIVE AUDIT TRAIL & PROVENANCE

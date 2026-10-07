@@ -476,7 +476,9 @@ else:
         # Confirm & Lock and Reset in one balanced row
         b_col1, b_col2 = st.columns(2)
         with b_col1:
-            btn_lock_bottom = st.button(":material/lock: Confirm & Lock Financials", type="primary", key="btn_confirm_lock", width="stretch")
+            lock_btn_label = ":material/lock_reset: Confirm & Re-Lock Financials" if is_locked else ":material/lock: Confirm & Lock Financials"
+            lock_btn_type = "secondary" if is_locked else "primary"
+            btn_lock_bottom = st.button(lock_btn_label, type=lock_btn_type, key="btn_confirm_lock", width="stretch")
 
         if btn_lock_top or btn_lock_bottom:
             can_lock = True

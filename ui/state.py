@@ -423,9 +423,7 @@ def get_app_context() -> Dict[str, Any]:
 
 def render_document_gate():
     """Renders the Hold card when mandatory document trinity is missing."""
-    st.markdown(
-        """
-    <div class="gate-card-hold">
+    gate_html = """<div class="gate-card-hold">
         <h3 style="color: #B91C1C; margin-top: 0; font-size: 16px;">STATUS: ON HOLD (Pending Mandatory Documents)</h3>
         <p style="color: #475569; font-size: 13px; max-width: 650px; margin: 0 0 10px 0;">
             The Underwriting Pipeline is gated. Under MSME credit policy, financial scoring cannot commence until all three documents in the <strong>Mandatory Document Trinity</strong> are uploaded or loaded.
@@ -434,9 +432,8 @@ def render_document_gate():
             Required documents: Bank Statement, GSTR-3B Return, and ITR Form.
         </div>
         <div style="margin-top: 8px; font-size: 12px; color: #64748B;">
-            Select a Pre-Generated Synthetic Cohort from the left sidebar to load verified sample documents.
+            Select a Pre-Generated Synthetic Cohort on the Case page to load verified sample documents.
         </div>
-    </div>
-    """,
-        unsafe_allow_html=True,
-    )
+    </div>"""
+    lines = [line.strip() for line in gate_html.splitlines() if line.strip()]
+    st.markdown("\n".join(lines), unsafe_allow_html=True)

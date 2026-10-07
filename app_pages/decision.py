@@ -68,14 +68,8 @@ if not st.session_state.hitl_confirmed or st.session_state.locked_case is None:
 cgtmse_txt = "Yes" if cgtmse_covered else "No"
 col_strip, col_edit = st.columns([5, 1])
 with col_strip:
-    st.markdown(
-        f"""<div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px 14px; font-size: 13px; color: #1F2937; margin-bottom: 8px;">
-            <strong>Facility:</strong> {format_inr(loan_amount)}, {int(tenure_months)} mos @ {float(interest_rate)}% p.a. &nbsp;|&nbsp; 
-            <strong>Collateral:</strong> {format_inr(collateral_val)} &nbsp;|&nbsp; 
-            <strong>CGTMSE:</strong> {cgtmse_txt}
-        </div>""",
-        unsafe_allow_html=True,
-    )
+    strip_html = f'<div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px 14px; font-size: 13px; color: #1F2937; margin-bottom: 8px;"><strong>Facility:</strong> {format_inr(loan_amount)}, {int(tenure_months)} mos @ {float(interest_rate)}% p.a. &nbsp;|&nbsp; <strong>Collateral:</strong> {format_inr(collateral_val)} &nbsp;|&nbsp; <strong>CGTMSE:</strong> {cgtmse_txt}</div>'
+    st.markdown(strip_html, unsafe_allow_html=True)
 with col_edit:
     if st.button(":material/edit: Edit terms", key="btn_edit_facility_terms", width="stretch"):
         st.session_state.current_page = "Case"

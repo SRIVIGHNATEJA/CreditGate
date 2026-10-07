@@ -50,6 +50,18 @@ def _escape(val: Any) -> str:
     return html.escape(str(val))
 
 
+def _clean_html(raw_html: str) -> str:
+    """Removes blank lines and trims leading whitespace from every line,
+    guaranteeing zero CommonMark 4-space code block traps."""
+    return "\n".join(line.strip() for line in raw_html.splitlines() if line.strip())
+
+
+def _render_html(html_str: str):
+    """Renders HTML via st.markdown with unsafe_allow_html=True after stripping all leading indentation and blank lines."""
+    cleaned = _clean_html(html_str)
+    st.markdown(cleaned, unsafe_allow_html=True)
+
+
 # ============================================================================
 # 1. STATUS PILL
 # ============================================================================
@@ -83,20 +95,7 @@ def status_pill(text: str, variant: str = "neutral") -> str:
         fg = COLOR_NEUTRAL_TEXT
         border = COLOR_BORDER
 
-    return f"""<span style="
-        display: inline-flex;
-        align-items: center;
-        padding: 2px 10px;
-        font-size: 11px;
-        font-weight: 600;
-        border-radius: 9999px;
-        background-color: {bg};
-        color: {fg};
-        border: 1px solid {border};
-        line-height: 1.4;
-        white-space: nowrap;
-        letter-spacing: 0.02em;
-    ">{clean_text}</span>"""
+    return f'<span style="display: inline-flex; align-items: center; padding: 2px 10px; font-size: 11px; font-weight: 600; border-radius: 9999px; background-color: {bg}; color: {fg}; border: 1px solid {border}; line-height: 1.4; white-space: nowrap; letter-spacing: 0.02em;">{clean_text}</span>'
 
 
 # ============================================================================
@@ -137,7 +136,7 @@ def kpi_card(
     elif clean_subtext:
         delta_html = f"""<div style="font-size: 11px; font-weight: 500; color: {COLOR_TEXT_MUTED}; margin-top: 4px; white-space: nowrap;">{clean_subtext}</div>"""
 
-    return f"""<div {title_attr} style="
+    return _clean_html(f"""<div {title_attr} style="
         background-color: {COLOR_SURFACE};
         border: 1px solid {COLOR_BORDER};
         border-radius: 8px;
@@ -172,7 +171,7 @@ def kpi_card(
             text-overflow: ellipsis;
         ">{clean_value}</div>
         {delta_html}
-    </div>"""
+    </div>""")
 
 
 def render_kpi_card(
@@ -184,10 +183,7 @@ def render_kpi_card(
     tooltip: Optional[str] = None
 ):
     """Convenience helper to render KPI card directly into Streamlit."""
-    st.markdown(
-        kpi_card(label, value, subtext=subtext, delta=delta, delta_color=delta_color, tooltip=tooltip),
-        unsafe_allow_html=True
-    )
+    _render_html(kpi_card(label, value, subtext=subtext, delta=delta, delta_color=delta_color, tooltip=tooltip))
 
 
 # ============================================================================
@@ -230,7 +226,7 @@ def callout(
 
     title_html = f"""<div style="font-weight: 700; color: {COLOR_NAVY}; margin-bottom: 2px;">{clean_title}</div>""" if clean_title else ""
 
-    return f"""<div style="
+    return _clean_html(f"""<div style="
         background-color: {bg};
         border: 1px solid {border};
         border-left: 4px solid {accent};
@@ -247,7 +243,7 @@ def callout(
             {title_html}
             <div>{clean_msg}</div>
         </div>
-    </div>"""
+    </div>""")
 
 
 def render_callout(
@@ -256,7 +252,7 @@ def render_callout(
     variant: str = "info"
 ):
     """Convenience helper to render callout directly into Streamlit."""
-    st.markdown(callout(message, title=title, variant=variant), unsafe_allow_html=True)
+    _render_html(callout(message, title=title, variant=variant))
 
 
 # ============================================================================
@@ -333,7 +329,7 @@ def verdict_hero_card(
         letter-spacing: -0.01em;
     ">Composite Score: {score:.1f} / 100.0</div>"""
 
-    return f"""<div style="
+    return _clean_html(f"""<div style="
         background-color: {bg};
         border: 1px solid {border};
         border-left: 6px solid {accent};
@@ -367,7 +363,7 @@ def verdict_hero_card(
             </div>
             {f'<div style="font-size: 12px; color: {COLOR_TEXT_MUTED}; line-height: 1.4;">{why_clean}</div>' if why_clean else ''}
         </div>
-    </div>"""
+    </div>""")
 
 
 def render_verdict_hero_card(
@@ -380,7 +376,7 @@ def render_verdict_hero_card(
     approver: Optional[str] = None
 ):
     """Convenience helper to render verdict hero card directly into Streamlit."""
-    st.markdown(
+    _render_html(
         verdict_hero_card(
             verdict,
             score,
@@ -389,8 +385,7 @@ def render_verdict_hero_card(
             overridden=overridden,
             baseline_verdict=baseline_verdict,
             approver=approver
-        ),
-        unsafe_allow_html=True
+        )
     )
 
 
@@ -496,7 +491,7 @@ def stepper(current_step: str = "Case", steps: Optional[List[str]] = None) -> st
     chevron = f"""<span style="color: #94A3B8; font-size: 16px; margin: 0 10px; user-select: none;">›</span>"""
     content = chevron.join(items_html)
 
-    return f"""<div style="
+    return _clean_html(f"""<div style="
         background-color: #FFFFFF;
         border: 1px solid {COLOR_BORDER};
         border-radius: 8px;
@@ -509,9 +504,9 @@ def stepper(current_step: str = "Case", steps: Optional[List[str]] = None) -> st
         overflow-x: auto;
     ">
         {content}
-    </div>"""
+    </div>""")
 
 
 def render_stepper(current_step: str = "Case", steps: Optional[List[str]] = None):
     """Convenience helper to render stepper directly into Streamlit."""
-    st.markdown(stepper(current_step, steps=steps), unsafe_allow_html=True)
+    _render_html(stepper(current_step, steps=steps))
