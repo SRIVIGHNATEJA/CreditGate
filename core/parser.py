@@ -320,13 +320,14 @@ def _extract_text_deterministic_itr(pdf_bytes: bytes) -> ITRExtraction:
 # 4. MULTIMODAL EXTRACTION WITH GEMINI 3.5 FLASH LITE
 # ============================================================================
 
-def _call_gemini_vision(pdf_bytes: bytes, system_prompt: str, schema_cls: Any) -> Any:
+def _call_gemini_vision(pdf_bytes: bytes, system_prompt: str, schema_cls: Any, api_key: Optional[str] = None) -> Any:
     """
     Calls Gemini API passing sanitized inline bytes directly without temporary disk files.
     Enforces structured JSON output conforming to the specified Pydantic schema.
     Falls back gracefully to deterministic extraction if API key is unset or network fails.
     """
-    if not GEMINI_API_KEY or GEMINI_API_KEY == "your_gemini_api_key_here":
+    key_to_use = api_key or GEMINI_API_KEY
+    if not key_to_use or key_to_use == "your_gemini_api_key_here":
         logger.info("GEMINI_API_KEY not configured. Engaging deterministic fallback parser.")
         return None
 
@@ -334,7 +335,7 @@ def _call_gemini_vision(pdf_bytes: bytes, system_prompt: str, schema_cls: Any) -
         from google import genai
         from google.genai import types
 
-        client = genai.Client(api_key=GEMINI_API_KEY)
+        client = genai.Client(api_key=key_to_use)
         pdf_part = types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")
 
         config = types.GenerateContentConfig(
@@ -362,7 +363,11 @@ def _call_gemini_vision(pdf_bytes: bytes, system_prompt: str, schema_cls: Any) -
         return None
 
 
-def extract_bank_statement(pdf_bytes: bytes) -> BankExtraction:
+def extract_bank_statement(
+    pdf_bytes: bytes,
+    gemini_api_key: Optional[str] = None,
+    force_deterministic: bool = False
+) -> BankExtraction:
     """Slices, redacts, and extracts Bank Statement into BankExtraction."""
     sliced_bytes, _ = slice_relevant_pages(pdf_bytes, doc_type="bank", max_pages=3)
     redacted_bytes, audit_events = redact_pii(sliced_bytes)
@@ -375,27 +380,33 @@ def extract_bank_statement(pdf_bytes: bytes) -> BankExtraction:
             redaction_events=audit_events
         )
 
-    prompt = (
-        "You are an expert Indian MSME Credit Underwriter. Extract bank statement financial fields:\n"
-        "- total_credits (Total inward credits/deposits for the period)\n"
-        "- total_debits (Total outward debits/withdrawals for the period)\n"
-        "- opening_balance\n"
-        "- closing_balance\n"
-        "- bounce_count (Count of inward/outward cheque returns, ECS/NACH mandate bounces)\n"
-        "- confidence (HIGH if clear, LOW if blurry or ambiguous)\n"
-        "Return numeric values only as standard numbers or strings without commas."
-    )
+    if not force_deterministic:
+        prompt = (
+            "You are an expert Indian MSME Credit Underwriter. Extract bank statement financial fields:\n"
+            "- total_credits (Total inward credits/deposits for the period)\n"
+            "- total_debits (Total outward debits/withdrawals for the period)\n"
+            "- opening_balance\n"
+            "- closing_balance\n"
+            "- bounce_count (Count of inward/outward cheque returns, ECS/NACH mandate bounces)\n"
+            "- confidence (HIGH if clear, LOW if blurry or ambiguous)\n"
+            "Return numeric values only as standard numbers or strings without commas."
+        )
 
-    result = _call_gemini_vision(redacted_bytes, prompt, BankExtraction)
-    if result is not None:
-        result.redaction_events = audit_events
-        return result
+        result = _call_gemini_vision(redacted_bytes, prompt, BankExtraction, api_key=gemini_api_key)
+        if result is not None:
+            result.redaction_events = audit_events
+            return result
+
     fallback = _extract_text_deterministic_bank(redacted_bytes)
     fallback.redaction_events = audit_events
     return fallback
 
 
-def extract_gstr3b(pdf_bytes: bytes) -> GSTExtraction:
+def extract_gstr3b(
+    pdf_bytes: bytes,
+    gemini_api_key: Optional[str] = None,
+    force_deterministic: bool = False
+) -> GSTExtraction:
     """Slices, redacts, and extracts GSTR-3B into GSTExtraction."""
     sliced_bytes, _ = slice_relevant_pages(pdf_bytes, doc_type="gst", max_pages=2)
     redacted_bytes, audit_events = redact_pii(sliced_bytes)
@@ -408,24 +419,30 @@ def extract_gstr3b(pdf_bytes: bytes) -> GSTExtraction:
             redaction_events=audit_events
         )
 
-    prompt = (
-        "You are an expert Indian GST Tax Underwriter. Extract GSTR-3B tax summary values:\n"
-        "- taxable_value (Total taxable value of outward supplies)\n"
-        "- total_tax_paid (Total tax discharged/paid)\n"
-        "- confidence (HIGH or LOW)\n"
-        "Return clean numbers without currency symbols."
-    )
+    if not force_deterministic:
+        prompt = (
+            "You are an expert Indian GST Tax Underwriter. Extract GSTR-3B tax summary values:\n"
+            "- taxable_value (Total taxable value of outward supplies)\n"
+            "- total_tax_paid (Total tax discharged/paid)\n"
+            "- confidence (HIGH or LOW)\n"
+            "Return clean numbers without currency symbols."
+        )
 
-    result = _call_gemini_vision(redacted_bytes, prompt, GSTExtraction)
-    if result is not None:
-        result.redaction_events = audit_events
-        return result
+        result = _call_gemini_vision(redacted_bytes, prompt, GSTExtraction, api_key=gemini_api_key)
+        if result is not None:
+            result.redaction_events = audit_events
+            return result
+
     fallback = _extract_text_deterministic_gst(redacted_bytes)
     fallback.redaction_events = audit_events
     return fallback
 
 
-def extract_itr(pdf_bytes: bytes) -> ITRExtraction:
+def extract_itr(
+    pdf_bytes: bytes,
+    gemini_api_key: Optional[str] = None,
+    force_deterministic: bool = False
+) -> ITRExtraction:
     """Slices, redacts, and extracts ITR / Audited Financials into ITRExtraction."""
     sliced_bytes, _ = slice_relevant_pages(pdf_bytes, doc_type="itr", max_pages=3)
     redacted_bytes, audit_events = redact_pii(sliced_bytes)
@@ -438,23 +455,25 @@ def extract_itr(pdf_bytes: bytes) -> ITRExtraction:
             redaction_events=audit_events
         )
 
-    prompt = (
-        "You are an expert corporate balance sheet underwriter. Extract corporate income tax metrics:\n"
-        "- gross_total_income\n"
-        "- profit_after_tax\n"
-        "- depreciation\n"
-        "- interest_paid\n"
-        "- net_worth\n"
-        "- total_debt\n"
-        "- existing_emi_obligations\n"
-        "- confidence (HIGH or LOW)\n"
-        "Return numbers without commas."
-    )
+    if not force_deterministic:
+        prompt = (
+            "You are an expert corporate balance sheet underwriter. Extract corporate income tax metrics:\n"
+            "- gross_total_income\n"
+            "- profit_after_tax\n"
+            "- depreciation\n"
+            "- interest_paid\n"
+            "- net_worth\n"
+            "- total_debt\n"
+            "- existing_emi_obligations\n"
+            "- confidence (HIGH or LOW)\n"
+            "Return numbers without commas."
+        )
 
-    result = _call_gemini_vision(redacted_bytes, prompt, ITRExtraction)
-    if result is not None:
-        result.redaction_events = audit_events
-        return result
+        result = _call_gemini_vision(redacted_bytes, prompt, ITRExtraction, api_key=gemini_api_key)
+        if result is not None:
+            result.redaction_events = audit_events
+            return result
+
     fallback = _extract_text_deterministic_itr(redacted_bytes)
     fallback.redaction_events = audit_events
     return fallback
@@ -490,7 +509,9 @@ def extract_all_documents(
     requested_loan_amount: Decimal = Decimal("5000000.00"),
     proposed_emi: Decimal = Decimal("150000.00"),
     proposed_rate: Decimal = Decimal("11.50"),
-    proposed_tenure_months: int = 36
+    proposed_tenure_months: int = 36,
+    gemini_api_key: Optional[str] = None,
+    force_deterministic: bool = False,
 ) -> Tuple[CreditCase, Dict[str, Any]]:
     """
     Executes parallel extraction across Bank, GST, and ITR documents using ThreadPoolExecutor(max_workers=3).
@@ -499,9 +520,9 @@ def extract_all_documents(
     start_time = time.perf_counter()
 
     with ThreadPoolExecutor(max_workers=3) as executor:
-        future_bank = executor.submit(extract_bank_statement, bank_bytes)
-        future_gst = executor.submit(extract_gstr3b, gst_bytes)
-        future_itr = executor.submit(extract_itr, itr_bytes)
+        future_bank = executor.submit(extract_bank_statement, bank_bytes, gemini_api_key, force_deterministic)
+        future_gst = executor.submit(extract_gstr3b, gst_bytes, gemini_api_key, force_deterministic)
+        future_itr = executor.submit(extract_itr, itr_bytes, gemini_api_key, force_deterministic)
 
         bank_data = future_bank.result()
         gst_data = future_gst.result()

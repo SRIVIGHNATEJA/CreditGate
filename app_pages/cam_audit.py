@@ -12,7 +12,8 @@ from core.cam_generator import (
     CamGenerationError,
 )
 from ui.state import get_app_context
-from ui.components import render_callout
+from ui.components import render_callout, status_pill
+from core.formatting import format_inr
 
 st.session_state.current_page = "CAM & Audit"
 ctx = get_app_context()
@@ -84,6 +85,39 @@ with tab_cam:
                 )
 
             st.markdown("---")
+
+            # Committee Sanction Summary Strip
+            c_res = st.session_state.score_result
+            c_case = st.session_state.locked_case
+            c_v = c_res.final_verdict.name if c_res else "PENDING"
+            v_pill = status_pill(c_v, variant="approve" if c_v == "APPROVE" else ("reject" if c_v == "REJECT" else "conditional"))
+
+            summary_strip_html = f"""<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 16px; margin: 10px 0 16px 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+                    <div style="font-size: 11px; font-weight: 700; color: #0F766E; text-transform: uppercase; letter-spacing: 0.06em;">Credit Committee Sanction Summary</div>
+                    <div>{v_pill}</div>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px;">
+                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px 12px;">
+                        <div style="font-size: 10px; font-weight: 600; color: #64748B; text-transform: uppercase;">Facility Proposed</div>
+                        <div style="font-size: 14px; font-weight: 700; color: #0B1F3A; margin-top: 2px;">{format_inr(c_case.requested_loan_amount if c_case and c_case.requested_loan_amount else 5000000)}</div>
+                    </div>
+                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px 12px;">
+                        <div style="font-size: 10px; font-weight: 600; color: #64748B; text-transform: uppercase;">Tenor & Pricing</div>
+                        <div style="font-size: 14px; font-weight: 700; color: #0B1F3A; margin-top: 2px;">{c_case.proposed_tenure_months if c_case and c_case.proposed_tenure_months else 36}M @ {c_case.proposed_rate if c_case and c_case.proposed_rate else 11.5}%</div>
+                    </div>
+                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px 12px;">
+                        <div style="font-size: 10px; font-weight: 600; color: #64748B; text-transform: uppercase;">Monthly Debt Service</div>
+                        <div style="font-size: 14px; font-weight: 700; color: #0B1F3A; margin-top: 2px;">{format_inr(c_case.proposed_emi if c_case and c_case.proposed_emi else 164994)}</div>
+                    </div>
+                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px 12px;">
+                        <div style="font-size: 10px; font-weight: 600; color: #64748B; text-transform: uppercase;">Five-Cs Composite</div>
+                        <div style="font-size: 14px; font-weight: 700; color: #0B1F3A; margin-top: 2px;">{c_res.composite_score:.1f} / 100.0</div>
+                    </div>
+                </div>
+            </div>"""
+            st.markdown("\n".join(line.strip() for line in summary_strip_html.splitlines() if line.strip()), unsafe_allow_html=True)
+
             st.markdown("#### Live Memorandum Preview")
 
             # Memo in a bordered container with centered readable width
@@ -102,6 +136,28 @@ with tab_cam:
                     </div>"""
                     st.markdown("\n".join(line.strip() for line in header_html.splitlines() if line.strip()), unsafe_allow_html=True)
                     st.markdown(st.session_state.cam_markdown)
+
+                    sign_html = """<div style="margin-top: 24px; border-top: 1px solid #E2E8F0; padding-top: 16px;">
+                        <div style="font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px;">Committee Sanction Sign-Off & Quorum Verification</div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+                            <div style="border: 1px dashed #CBD5E1; border-radius: 6px; padding: 12px; background: #F8FAFC;">
+                                <div style="font-size: 10px; font-weight: 700; color: #0F766E; text-transform: uppercase;">1. Credit Appraiser</div>
+                                <div style="font-size: 12px; font-weight: 600; color: #0B1F3A; margin-top: 4px;">Senior MSME Credit Analyst</div>
+                                <div style="font-size: 11px; color: #64748B;">Desk Review & Primary Due Diligence</div>
+                            </div>
+                            <div style="border: 1px dashed #CBD5E1; border-radius: 6px; padding: 12px; background: #F8FAFC;">
+                                <div style="font-size: 10px; font-weight: 700; color: #0F766E; text-transform: uppercase;">2. Risk Concurrence</div>
+                                <div style="font-size: 12px; font-weight: 600; color: #0B1F3A; margin-top: 4px;">Zonal Risk Operations Head</div>
+                                <div style="font-size: 11px; color: #64748B;">Policy Compliance & Limits Validation</div>
+                            </div>
+                            <div style="border: 1px dashed #CBD5E1; border-radius: 6px; padding: 12px; background: #F8FAFC;">
+                                <div style="font-size: 10px; font-weight: 700; color: #0F766E; text-transform: uppercase;">3. Sanctioning Authority</div>
+                                <div style="font-size: 12px; font-weight: 600; color: #0B1F3A; margin-top: 4px;">Credit Committee Chair</div>
+                                <div style="font-size: 11px; color: #64748B;">Final Sanction Determination</div>
+                            </div>
+                        </div>
+                    </div>"""
+                    st.markdown("\n".join(line.strip() for line in sign_html.splitlines() if line.strip()), unsafe_allow_html=True)
 
 # ============================================================================
 # SUB-TAB 2: LIVE AUDIT TRAIL & PROVENANCE

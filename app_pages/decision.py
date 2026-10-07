@@ -1,5 +1,6 @@
 import os
 import json
+import html
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
@@ -455,6 +456,10 @@ if res is not None:
         st.markdown("---")
         st.markdown("#### :material/search: Adverse Media Screening & Legal Due Diligence")
         st.caption("Secondary structured search ingestion with keyword/pattern matching.")
+        registry_strip = """<div style="background: #F1F5F9; border: 1px solid #E2E8F0; border-radius: 6px; padding: 6px 12px; margin-bottom: 10px; font-size: 11px; color: #475569;">
+            <strong>Screened Legal Dockets:</strong> e-Courts NJDG • NCLT/NCLAT Insolvency Cases • MCA-21 Portal • IBBI Corporate Insolvency Registry • DRT Recovery Registers
+        </div>"""
+        st.markdown("\n".join(line.strip() for line in registry_strip.splitlines() if line.strip()), unsafe_allow_html=True)
 
         active_cin = cin_parsed_data["cin"] if cin_parsed_data else "UNREGISTERED_MSME"
         company_nm = (
@@ -583,12 +588,29 @@ if res is not None:
                                         render_callout("Minimum 10 characters required for dismissal justification.", title="Validation Error", variant="error")
 
         # --------------------------------------------------------------------
-        # 7. OFFICER FIELD NOTES
+        # 7. OFFICER FIELD NOTES & QUALITATIVE LOGBOOK
         # --------------------------------------------------------------------
-        with st.expander(":material/edit_note: Credit Officer Field Observations", expanded=False):
+        with st.expander(":material/rate_review: Credit Committee Qualitative Field Logbook", expanded=bool(st.session_state.officer_notes)):
+            st.caption("Record on-site inspection observations, promoter interviews, and qualitative due diligence.")
+
+            st.markdown("<div style='font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; margin-bottom: 4px;'>Quick Observation Presets:</div>", unsafe_allow_html=True)
+            col_pr1, col_pr2, col_pr3 = st.columns(3)
+            with col_pr1:
+                if st.button("Plant Inspection", key="btn_pr_plant", width="stretch"):
+                    st.session_state.txt_field_note = "Plant inspection verified: Machinery in operational condition at 85% capacity utilization. Physical stock matches GSTR-3B filings."
+                    st.rerun()
+            with col_pr2:
+                if st.button("Promoter Diligence", key="btn_pr_promoter", width="stretch"):
+                    st.session_state.txt_field_note = "Promoter interview concluded: Clear market reputation, satisfactory vintage in the sector, and clean track record with local suppliers."
+                    st.rerun()
+            with col_pr3:
+                if st.button("Working Capital Cycle", key="btn_pr_wc", width="stretch"):
+                    st.session_state.txt_field_note = "Working capital verification: Receivables turnover matches standard 45-day commercial terms with low single-debtor concentration."
+                    st.rerun()
+
             fn_text = st.text_area("Field Visit Observation / Qualitative Notes", placeholder="e.g. Visited plant in Okhla. Machinery in operational condition, factory working at 85% utilization.", key="txt_field_note")
             fn_pillar = st.selectbox("Affected C Pillar", ["CHARACTER", "CAPACITY", "CAPITAL", "COLLATERAL", "CONDITIONS", "GENERAL"], key="sb_fn_pillar")
-            if st.button("Save Field Note", key="btn_save_field_note"):
+            if st.button("Save Field Note", key="btn_save_field_note", width="stretch"):
                 if fn_text.strip():
                     note_entry = {
                         "affected_c": fn_pillar,
@@ -605,11 +627,31 @@ if res is not None:
                     render_callout("Field observation appended and stamped in audit log.", title="Observation Saved", variant="success")
                     st.rerun()
 
+            if st.session_state.officer_notes:
+                st.markdown("##### Logged Field Observations")
+                for on in st.session_state.officer_notes:
+                    c_tag = status_pill(on.get("affected_c", "GENERAL"), variant="info")
+                    clean_ts = html.escape(str(on.get("timestamp", "")))
+                    clean_txt = html.escape(str(on.get("note_text", "")))
+                    note_card = f"""<div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid #0F766E; border-radius: 6px; padding: 10px 14px; margin-bottom: 8px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <div>{c_tag}</div>
+                            <div style="font-size: 11px; color: #64748B;">{clean_ts}</div>
+                        </div>
+                        <div style="font-size: 13px; color: #1F2937; line-height: 1.45;">{clean_txt}</div>
+                    </div>"""
+                    st.markdown("\n".join(line.strip() for line in note_card.splitlines() if line.strip()), unsafe_allow_html=True)
+
         # --------------------------------------------------------------------
         # 8. EXECUTIVE VETO (CREDIT COMMITTEE OVERRIDE)
         # --------------------------------------------------------------------
-        with st.expander(":material/gavel: Executive Veto (Credit Committee Override)", expanded=False):
+        with st.expander(":material/gavel: Executive Veto (Credit Committee Override)", expanded=bool(st.session_state.executive_override and st.session_state.executive_override.get("override_active"))):
             st.caption("Under bank governance, credit committee officers may override the algorithmic verdict, but MUST provide written justification.")
+            gov_note = """<div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; font-size: 11px; color: #64748B; line-height: 1.4;">
+                <strong>Governance Rule:</strong> Overrides are prohibited if an admitted SEVERE adverse finding (e.g. NCLT) is confirmed. Written justification (minimum 20 characters) is permanently chained into the session audit log.
+            </div>"""
+            st.markdown("\n".join(line.strip() for line in gov_note.splitlines() if line.strip()), unsafe_allow_html=True)
+
             veto_active = st.toggle("Enable Executive Veto", value=bool(st.session_state.executive_override and st.session_state.executive_override.get("override_active")), key="tgl_veto_active")
             if not veto_active and st.session_state.executive_override and st.session_state.executive_override.get("override_active"):
                 st.session_state.executive_override = None
