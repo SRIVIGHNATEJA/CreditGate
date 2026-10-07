@@ -56,10 +56,12 @@ def test_facility_edit_keeps_lock():
     assert at.session_state.score_result is not None
     orig_comp_hash = at.session_state.scored_composite_hash
 
-    # 3. Edit facility terms in sidebar form
-    at.sidebar.number_input[0].set_value(7500000.0)  # Loan amount
-    at.sidebar.slider[0].set_value(48)               # Tenure
-    at.sidebar.button[0].click().run(timeout=30)      # Apply Facility Terms
+    # 3. Edit facility terms in Case form per B1
+    at.switch_page("app_pages/case.py").run(timeout=30)
+    at.number_input[0].set_value(7500000.0)  # Loan amount
+    at.slider[0].set_value(48)               # Tenure
+    next(b for b in at.button if "Apply Facility" in b.label).click().run(timeout=30)
+    at.switch_page("app_pages/decision.py").run(timeout=30)
 
     # Rule check: locked_case is NOT cleared
     assert at.session_state.locked_case is not None
@@ -106,7 +108,9 @@ def test_cohort_and_pan_change_clears_lock_with_message():
     assert at.session_state.locked_case is not None
 
     # 2. PAN change clears lock and sets message
-    at.sidebar.text_input[1].input("AAACA9999Z").run(timeout=30)
+    at.switch_page("app_pages/case.py").run(timeout=30)
+    pan_input = next(t for t in at.text_input if t.key == "case_pan_input")
+    pan_input.input("AAACA9999Z").run(timeout=30)
     assert at.session_state.locked_case is None
     assert at.session_state.hitl_confirmed is False
     assert at.session_state.score_result is None
@@ -120,7 +124,8 @@ def test_cohort_and_pan_change_clears_lock_with_message():
     assert at.session_state.lock_cleared_message is None
 
     # 4. Cohort change clears lock and sets message
-    at.sidebar.selectbox[0].select_index(2).run(timeout=30)  # Select Cohort 2
+    at.switch_page("app_pages/case.py").run(timeout=30)
+    at.selectbox[0].select_index(2).run(timeout=30)  # Select Cohort 2
     assert at.session_state.locked_case is None
     assert at.session_state.hitl_confirmed is False
     assert at.session_state.score_result is None
@@ -180,7 +185,7 @@ def test_veto_then_confirm_severe_clears_override_and_enforces_reject():
     at.run(timeout=30)
 
     # 1. Cohort 2 (Distressed)
-    at.sidebar.selectbox[0].select_index(2).run(timeout=30)
+    at.selectbox[0].select_index(2).run(timeout=30)
     at.switch_page("app_pages/evidence.py").run(timeout=30)
     next(b for b in at.button if "Extract" in b.label).click().run(timeout=30)
     next(b for b in at.button if "Confirm & Lock" in b.label).click().run(timeout=30)

@@ -19,8 +19,8 @@ from core.onboarding import (
 )
 from core.analyser import calculate_monthly_emi
 from core.formatting import format_inr
-from core.audit_logger import AuditLogger
-from ui.components import render_kpi_card, render_callout
+from core.audit_logger import AuditLogger, verify_chain
+from ui.components import render_kpi_card, render_callout, status_pill
 
 COHORT_COMPANY_NAMES = {
     "Cohort 1: Prime MSME (Apex Synthetic Demo)": "Apex Synthetic Holdings (Demo)",
@@ -63,6 +63,9 @@ def select_and_reset_cohort(cohort_name: str):
         st.session_state.sb_cohort_selection = cohort_name
         st.session_state.sb_cin_input = defaults["cin"]
         st.session_state.sb_pan_input = defaults["pan"]
+        st.session_state.case_cohort_select = cohort_name
+        st.session_state.case_cin_input = defaults["cin"]
+        st.session_state.case_pan_input = defaults["pan"]
     except Exception:
         st.session_state["_pending_cohort_reset"] = cohort_name
         st.rerun()
@@ -71,6 +74,8 @@ def select_and_reset_cohort(cohort_name: str):
     st.session_state.active_cohort_selection = cohort_name
     st.session_state.active_cin_selection = defaults["cin"]
     st.session_state.active_pan_input = defaults["pan"].strip().upper()
+    st.session_state.case_pan_input = defaults["pan"]
+    st.session_state.case_cin_input = defaults["cin"]
     st.session_state.active_pan_mismatch = False
 
     # B-07: Regenerate app_id on cohort change to prevent audit log pollution
@@ -141,7 +146,25 @@ def init_session_state():
         st.session_state.last_research_cin = None
     if "last_research_cache_key" not in st.session_state:
         st.session_state.last_research_cache_key = None
-    # Facility defaults
+    # Cohort and Borrower defaults
+    if "active_cohort_selection" not in st.session_state:
+        st.session_state.active_cohort_selection = "Cohort 1: Prime MSME (Apex Synthetic Demo)"
+    if "sb_cohort_selection" not in st.session_state:
+        st.session_state.sb_cohort_selection = "Cohort 1: Prime MSME (Apex Synthetic Demo)"
+    if "active_is_corporate" not in st.session_state:
+        st.session_state.active_is_corporate = True
+    if "active_cin_selection" not in st.session_state:
+        st.session_state.active_cin_selection = "U29253DL2018PTC334120"
+    if "sb_cin_input" not in st.session_state:
+        st.session_state.sb_cin_input = "U29253DL2018PTC334120"
+    if "active_pan_input" not in st.session_state:
+        st.session_state.active_pan_input = "AAACA1234B"
+    if "sb_pan_input" not in st.session_state:
+        st.session_state.sb_pan_input = "AAACA1234B"
+    if "active_pan_mismatch" not in st.session_state:
+        st.session_state.active_pan_mismatch = False
+
+    # Facility defaults (B2: plain session_state keys)
     if "facility_loan_amount" not in st.session_state:
         st.session_state.facility_loan_amount = 5000000.0
     if "facility_tenure_months" not in st.session_state:
@@ -152,6 +175,25 @@ def init_session_state():
         st.session_state.facility_collateral_val = 0.0
     if "facility_cgtmse_covered" not in st.session_state:
         st.session_state.facility_cgtmse_covered = True
+
+    # Synced plain aliases for direct access
+    if "loan_amount" not in st.session_state:
+        st.session_state.loan_amount = st.session_state.facility_loan_amount
+    if "tenure_months" not in st.session_state:
+        st.session_state.tenure_months = st.session_state.facility_tenure_months
+    if "interest_rate" not in st.session_state:
+        st.session_state.interest_rate = st.session_state.facility_interest_rate
+    if "collateral_value" not in st.session_state:
+        st.session_state.collateral_value = st.session_state.facility_collateral_val
+    if "cgtmse_covered" not in st.session_state:
+        st.session_state.cgtmse_covered = st.session_state.facility_cgtmse_covered
+    if "proposed_emi" not in st.session_state:
+        st.session_state.proposed_emi = float(calculate_monthly_emi(
+            principal=Decimal(str(st.session_state.facility_loan_amount)),
+            annual_rate_pct=Decimal(str(st.session_state.facility_interest_rate)),
+            tenure_months=int(st.session_state.facility_tenure_months),
+        ))
+
     # In-memory document bytes
     if "uploaded_bank_bytes" not in st.session_state:
         st.session_state.uploaded_bank_bytes = None
@@ -208,7 +250,13 @@ def compute_composite_hash(
 
 
 def render_sidebar() -> Dict[str, Any]:
-    """Renders the shared sidebar with 3 bordered groups (Case, Borrower, Facility)."""
+    """Renders the slimmed shared sidebar per B3:
+    - App ID
+    - Step status (Case -> Evidence -> Decision -> CAM)
+    - Reset case button
+    - Audit chain status via verify_chain()
+    Nothing else in sidebar.
+    """
     init_session_state()
 
     if "_pending_cohort_reset" in st.session_state:
@@ -217,285 +265,106 @@ def render_sidebar() -> Dict[str, Any]:
 
     with st.sidebar:
         st.markdown("### :material/shield: CreditGate v3.0")
-        st.caption("AI-Powered MSME Credit Underwriting Copilot")
+        st.caption("AI MSME Underwriting Copilot")
         st.markdown(f"**Application ID:** `{st.session_state.app_id}`")
         st.markdown("---")
 
-        # --------------------------------------------------------------------
-        # BORDERED GROUP 1: Case (Cohort)
-        # --------------------------------------------------------------------
+        # 1. Step status (Case -> Evidence -> Decision -> CAM)
         with st.container(border=True):
-            st.markdown("#### :material/workspaces: Case")
-            cohort_options = [
-                "None (Manual Upload)",
-                "Cohort 1: Prime MSME (Apex Synthetic Demo)",
-                "Cohort 2: Distressed (Kaveri Fictitious Demo)",
-                "Cohort 3: Mismatch Trap (Bharat Mock Demo)",
-            ]
-            default_idx = None if "sb_cohort_selection" in st.session_state else 1
-            cohort_selection = st.selectbox(
-                "Quick-Load Test Cohort",
-                cohort_options,
-                index=default_idx,
-                key="sb_cohort_selection",
-            )
-            cohort_selection = cohort_selection or "None (Manual Upload)"
+            st.markdown("#### :material/alt_route: Step Status")
 
-        if "active_cohort_selection" not in st.session_state:
-            st.session_state.active_cohort_selection = cohort_selection
+            is_extracted = (st.session_state.get("locked_case") is not None or st.session_state.get("extracted_case") is not None)
+            is_locked = (st.session_state.get("locked_case") is not None)
+            is_scored = (st.session_state.get("score_result") is not None)
+            is_cam = (st.session_state.get("cam_markdown") is not None)
 
-        # 1. Full reset on cohort change (Must run BEFORE sb_cin_input / sb_pan_input widgets are instantiated)
-        if st.session_state.active_cohort_selection != cohort_selection:
-            defaults = COHORT_DEFAULTS.get(cohort_selection, COHORT_DEFAULTS["None (Manual Upload)"])
-            st.session_state.sb_cin_input = defaults["cin"]
-            st.session_state.sb_pan_input = defaults["pan"]
-            st.session_state.active_cohort_selection = cohort_selection
-            st.session_state.active_cin_selection = defaults["cin"]
-            st.session_state.active_pan_input = defaults["pan"].strip().upper()
-            st.session_state.active_pan_mismatch = False
-            st.session_state.app_id = generate_application_id(defaults["company_name"])
-            st.session_state.audit_trail = []
-
-            st.session_state.extracted_case = None
-            st.session_state.extraction_meta = None
-            st.session_state.hitl_confirmed = False
-            st.session_state.editable_df = None
-            st.session_state.original_df = None
-            st.session_state.locked_case = None
-            st.session_state.locked_financials_hash = None
-            st.session_state.scored_financials_hash = None
-            st.session_state.scored_composite_hash = None
-            st.session_state.score_result = None
-            st.session_state.officer_notes = []
-            st.session_state.executive_override = None
-            st.session_state.cam_markdown = None
-            st.session_state.current_research_report = None
-            st.session_state.last_research_cache_key = None
-            st.session_state.lock_cleared_message = "Lock cleared because cohort changed."
-            st.rerun()
-
-        # --------------------------------------------------------------------
-        # BORDERED GROUP 2: Borrower (CIN, PAN)
-        # --------------------------------------------------------------------
-        with st.container(border=True):
-            st.markdown("#### :material/domain: Borrower")
-            is_corporate = st.toggle("Registered Corporate? (MCA CIN)", value=True, key="sb_is_corporate")
-
-            cin_parsed_data = None
-            if is_corporate:
-                default_cin = "U29253DL2018PTC334120"
-                if cohort_selection and "Cohort 2" in cohort_selection:
-                    default_cin = "U60200KA2019PTC120481"
-                elif cohort_selection and "Cohort 3" in cohort_selection:
-                    default_cin = "U24101MH2020PTC349120"
-
-                cin_val = None if "sb_cin_input" in st.session_state else default_cin
-                cin_input = st.text_input("Corporate ID Number (CIN)", value=cin_val, key="sb_cin_input")
-                is_cin_valid, cin_err = validate_cin_syntax(cin_input)
-                if not is_cin_valid:
-                    render_callout(cin_err, title="Invalid CIN Format", variant="error")
-                else:
-                    cin_parsed_data = parse_cin(cin_input)
-                    render_callout(
-                        f"MCA Valid: {cin_parsed_data['state_name']} | Vintage: {cin_parsed_data['business_vintage_years']} Years",
-                        title="MCA Validated",
-                        variant="success",
-                    )
-                    if cin_parsed_data["low_vintage_risk_flag"]:
-                        render_callout(
-                            "Business vintage < 3 years indicates elevated early-stage default risk.",
-                            title="Vintage Risk Warning",
-                            variant="warning",
-                        )
+            p_case = status_pill("Configured", variant="approve")
+            if is_locked:
+                p_ev = status_pill("Locked", variant="approve")
+            elif is_extracted:
+                p_ev = status_pill("Extracted", variant="info")
             else:
-                render_callout("Unregistered MSME / Proprietorship mode active.", title="Entity Mode", variant="info")
-                manual_sector = st.selectbox("Industry Macro Sector", list(NIC_SECTOR_TAXONOMY.values()), index=0, key="sb_manual_sector")
-                manual_vintage = st.number_input("Business Vintage (Years)", min_value=1, max_value=60, value=7, key="sb_manual_vintage")
-                cin_input = "UNREGISTERED_MSME"
-                cin_parsed_data = {
-                    "cin": "UNREGISTERED_MSME",
-                    "listing_status": "Unlisted",
-                    "macro_sector": manual_sector,
-                    "business_vintage_years": manual_vintage,
-                    "low_vintage_risk_flag": manual_vintage < 3,
-                    "entity_code": "PROPRIETORSHIP",
-                    "state_name": "Pan-India",
-                }
+                p_ev = status_pill("Pending", variant="neutral")
 
-            # PAN Verification
-            default_pan = "AAACA1234B"
-            if cohort_selection and "Cohort 2" in cohort_selection:
-                default_pan = "AAACK5678M"
-            elif cohort_selection and "Cohort 3" in cohort_selection:
-                default_pan = "AABFB8910N"
+            p_dec = status_pill("Scored", variant="approve") if is_scored else status_pill("Pending", variant="neutral")
+            p_cam = status_pill("Generated", variant="approve") if is_cam else status_pill("Pending", variant="neutral")
 
-            pan_val = None if "sb_pan_input" in st.session_state else default_pan
-            pan_input = st.text_input("Permanent Account Number (PAN)", value=pan_val, key="sb_pan_input")
-            pan_check = check_entity_consistency(
-                pan_input,
-                is_corporate=is_corporate,
-                cin_entity_code=cin_parsed_data.get("entity_code") if cin_parsed_data else None,
-            )
-            if not pan_check["is_valid"]:
-                render_callout(pan_check["error"], title="Invalid PAN Format", variant="error")
-            elif pan_check["mismatch_detected"]:
-                render_callout(pan_check["warning_message"], title="Entity Mismatch Detected", variant="warning")
+            st.markdown(f"**1. Case:** &nbsp; {p_case}", unsafe_allow_html=True)
+            st.markdown(f"**2. Evidence:** &nbsp; {p_ev}", unsafe_allow_html=True)
+            st.markdown(f"**3. Decision:** &nbsp; {p_dec}", unsafe_allow_html=True)
+            st.markdown(f"**4. CAM & Audit:** &nbsp; {p_cam}", unsafe_allow_html=True)
 
-        # Detect CIN, PAN, or entity-type change and wipe/invalidate downstream session state
-        current_cin_val = cin_input if is_corporate else "UNREGISTERED_MSME"
-        current_pan_val = pan_input.strip().upper()
-        current_pan_mismatch = bool(pan_check.get("mismatch_detected", False))
-
-        if "active_is_corporate" not in st.session_state:
-            st.session_state.active_is_corporate = is_corporate
-        if "active_cin_selection" not in st.session_state:
-            st.session_state.active_cin_selection = current_cin_val
-        if "active_pan_input" not in st.session_state:
-            st.session_state.active_pan_input = current_pan_val
-        if "active_pan_mismatch" not in st.session_state:
-            st.session_state.active_pan_mismatch = current_pan_mismatch
-
-        # Reset on entity-type change
-        if st.session_state.active_is_corporate != is_corporate:
-            st.session_state.active_is_corporate = is_corporate
-            st.session_state.extracted_case = None
-            st.session_state.extraction_meta = None
-            st.session_state.hitl_confirmed = False
-            st.session_state.editable_df = None
-            st.session_state.original_df = None
-            st.session_state.locked_case = None
-            st.session_state.locked_financials_hash = None
-            st.session_state.scored_financials_hash = None
-            st.session_state.scored_composite_hash = None
-            st.session_state.score_result = None
-            st.session_state.officer_notes = []
-            st.session_state.executive_override = None
-            st.session_state.cam_markdown = None
-            st.session_state.current_research_report = None
-            st.session_state.last_research_cache_key = None
-            st.session_state.lock_cleared_message = "Lock cleared because entity type changed."
+        # 2. Reset Case Button
+        if st.button(":material/restart_alt: Reset Case", key="sb_btn_reset_case", width="stretch"):
+            cur_cohort = st.session_state.get("active_cohort_selection", "Cohort 1: Prime MSME (Apex Synthetic Demo)")
+            select_and_reset_cohort(cur_cohort)
             st.rerun()
 
-        # Full reset on CIN change
-        if st.session_state.active_cin_selection != current_cin_val:
-            st.session_state.active_cin_selection = current_cin_val
-            st.session_state.active_pan_input = current_pan_val
-            st.session_state.active_pan_mismatch = current_pan_mismatch
-            st.session_state.extracted_case = None
-            st.session_state.extraction_meta = None
-            st.session_state.hitl_confirmed = False
-            st.session_state.editable_df = None
-            st.session_state.original_df = None
-            st.session_state.locked_case = None
-            st.session_state.locked_financials_hash = None
-            st.session_state.scored_financials_hash = None
-            st.session_state.scored_composite_hash = None
-            st.session_state.score_result = None
-            st.session_state.officer_notes = []
-            st.session_state.executive_override = None
-            st.session_state.cam_markdown = None
-            st.session_state.current_research_report = None
-            st.session_state.last_research_cache_key = None
-            st.session_state.lock_cleared_message = "Lock cleared because CIN changed."
-            st.rerun()
-
-        # Reset on PAN change
-        if (st.session_state.active_pan_input != current_pan_val) or (st.session_state.active_pan_mismatch != current_pan_mismatch):
-            st.session_state.active_pan_input = current_pan_val
-            st.session_state.active_pan_mismatch = current_pan_mismatch
-            st.session_state.extracted_case = None
-            st.session_state.extraction_meta = None
-            st.session_state.hitl_confirmed = False
-            st.session_state.editable_df = None
-            st.session_state.original_df = None
-            st.session_state.locked_case = None
-            st.session_state.locked_financials_hash = None
-            st.session_state.scored_financials_hash = None
-            st.session_state.scored_composite_hash = None
-            st.session_state.score_result = None
-            st.session_state.officer_notes = []
-            st.session_state.executive_override = None
-            st.session_state.cam_markdown = None
-            st.session_state.current_research_report = None
-            st.session_state.last_research_cache_key = None
-            st.session_state.lock_cleared_message = "Lock cleared because PAN changed."
-            st.rerun()
-
-        # --------------------------------------------------------------------
-        # BORDERED GROUP 3: Facility Terms (st.form)
-        # --------------------------------------------------------------------
+        # 3. Audit chain status via verify_chain()
         with st.container(border=True):
-            st.markdown("#### :material/payments: Facility")
-            with st.form(key="facility_form"):
-                form_loan = st.number_input(
-                    "Requested Facility (₹)",
-                    min_value=100000.0,
-                    value=float(st.session_state.facility_loan_amount),
-                    step=500000.0,
-                    format="%.2f",
-                    key="form_loan_amount",
-                )
-                form_tenure = st.slider(
-                    "Tenure (Months)",
-                    min_value=12,
-                    max_value=84,
-                    value=int(st.session_state.facility_tenure_months),
-                    step=6,
-                    key="form_tenure_months",
-                )
-                form_rate = st.slider(
-                    "Indicative Rate (%)",
-                    min_value=7.5,
-                    max_value=24.0,
-                    value=float(st.session_state.facility_interest_rate),
-                    step=0.25,
-                    key="form_interest_rate",
-                )
-                form_collat = st.number_input(
-                    "Pledged Collateral (₹)",
-                    min_value=0.0,
-                    value=float(st.session_state.facility_collateral_val),
-                    step=100000.0,
-                    format="%.2f",
-                    help="Immovable property, fixed assets, or liquid collateral pledged.",
-                    key="form_collateral_val",
-                )
-                form_cgtmse = st.checkbox(
-                    "CGTMSE Guarantee Covered",
-                    value=bool(st.session_state.facility_cgtmse_covered),
-                    help="Credit Guarantee Fund Trust for Micro and Small Enterprises coverage active.",
-                    key="form_cgtmse_covered",
-                )
-                submitted = st.form_submit_button(":material/save: Apply Facility Terms", type="primary")
-                if submitted:
-                    st.session_state.facility_loan_amount = float(form_loan)
-                    st.session_state.facility_tenure_months = int(form_tenure)
-                    st.session_state.facility_interest_rate = float(form_rate)
-                    st.session_state.facility_collateral_val = float(form_collat)
-                    st.session_state.facility_cgtmse_covered = bool(form_cgtmse)
-                    st.rerun()
+            st.markdown("#### :material/verified_user: Audit Trail")
+            is_chain_valid, chain_err = verify_chain(st.session_state.get("audit_trail", []))
+            if is_chain_valid:
+                evt_count = len(st.session_state.get("audit_trail", []))
+                st.markdown(f"**Chain:** &nbsp; {status_pill('Verified', variant='approve')}", unsafe_allow_html=True)
+                st.caption(f"{evt_count} events in verified hash chain")
+            else:
+                st.markdown(f"**Chain:** &nbsp; {status_pill('Tampered', variant='reject')}", unsafe_allow_html=True)
+                st.caption(f"Error: {chain_err}")
 
-            loan_amount = st.session_state.facility_loan_amount
-            tenure_months = st.session_state.facility_tenure_months
-            interest_rate = st.session_state.facility_interest_rate
-            collateral_val = st.session_state.facility_collateral_val
-            cgtmse_covered = st.session_state.facility_cgtmse_covered
+    return get_app_context()
 
-            # Backend-computed Annuity EMI
-            computed_monthly_emi = calculate_monthly_emi(
-                principal=Decimal(str(loan_amount)),
-                annual_rate_pct=Decimal(str(interest_rate)),
-                tenure_months=int(tenure_months),
-            )
-            render_kpi_card(
-                "Computed Monthly EMI",
-                format_inr(computed_monthly_emi),
-                subtext="Banking Annuity Formula",
-                tooltip="P*r*(1+r)^n / ((1+r)^n - 1)",
-            )
-            proposed_emi = float(computed_monthly_emi)
 
-    # Resolve document bytes (Cohort vs In-Memory Uploads)
+def get_app_context() -> Dict[str, Any]:
+    """Retrieves the current application context, resolving from plain session_state keys."""
+    init_session_state()
+
+    cohort_selection = st.session_state.get("active_cohort_selection", "Cohort 1: Prime MSME (Apex Synthetic Demo)")
+    is_corporate = st.session_state.get("active_is_corporate", True)
+    cin_input = st.session_state.get("active_cin_selection", "U29253DL2018PTC334120")
+    pan_input = st.session_state.get("active_pan_input", "AAACA1234B")
+    current_cin_val = cin_input if is_corporate else "UNREGISTERED_MSME"
+    current_pan_val = pan_input.strip().upper()
+
+    cin_parsed_data = None
+    if is_corporate:
+        is_cin_valid, _ = validate_cin_syntax(current_cin_val)
+        if is_cin_valid:
+            cin_parsed_data = parse_cin(current_cin_val)
+    else:
+        manual_sector = st.session_state.get("manual_sector", list(NIC_SECTOR_TAXONOMY.values())[0])
+        manual_vintage = st.session_state.get("manual_vintage", 7)
+        cin_parsed_data = {
+            "cin": "UNREGISTERED_MSME",
+            "listing_status": "Unlisted",
+            "macro_sector": manual_sector,
+            "business_vintage_years": manual_vintage,
+            "low_vintage_risk_flag": manual_vintage < 3,
+            "entity_code": "PROPRIETORSHIP",
+            "state_name": "Pan-India",
+        }
+
+    pan_check = check_entity_consistency(
+        current_pan_val,
+        is_corporate=is_corporate,
+        cin_entity_code=cin_parsed_data.get("entity_code") if cin_parsed_data else None,
+    )
+    current_pan_mismatch = bool(pan_check.get("mismatch_detected", False))
+
+    loan_amount = float(st.session_state.get("facility_loan_amount", 5000000.0))
+    tenure_months = int(st.session_state.get("facility_tenure_months", 36))
+    interest_rate = float(st.session_state.get("facility_interest_rate", 11.5))
+    collateral_val = float(st.session_state.get("facility_collateral_val", 0.0))
+    cgtmse_covered = bool(st.session_state.get("facility_cgtmse_covered", True))
+
+    computed_monthly_emi = calculate_monthly_emi(
+        principal=Decimal(str(loan_amount)),
+        annual_rate_pct=Decimal(str(interest_rate)),
+        tenure_months=int(tenure_months),
+    )
+    proposed_emi = float(computed_monthly_emi)
+
+    # Document bytes
     base_synthetic = Path(__file__).resolve().parent.parent / "data" / "synthetic"
     bank_bytes, gst_bytes, itr_bytes = None, None, None
     cohort_name = "Custom Upload"
@@ -550,14 +419,6 @@ def render_sidebar() -> Dict[str, Any]:
     }
     st.session_state.app_context = ctx
     return ctx
-
-
-def get_app_context() -> Dict[str, Any]:
-    """Retrieves the current application context, initializing if needed."""
-    if "app_context" not in st.session_state:
-        init_session_state()
-        return render_sidebar()
-    return st.session_state.app_context
 
 
 def render_document_gate():

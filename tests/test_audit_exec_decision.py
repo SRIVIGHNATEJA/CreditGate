@@ -226,7 +226,7 @@ def test_apptest_decision_adverse_media_rescores_in_place():
     at = AppTest.from_file(APP_PATH, default_timeout=30)
     at.run(timeout=30)
     # Select Cohort 2
-    at.sidebar.selectbox[0].select_index(2).run(timeout=30)
+    at.selectbox[0].select_index(2).run(timeout=30)
     at.switch_page("app_pages/evidence.py").run(timeout=30)
     next((b for b in at.button if "Extract" in b.label)).click().run(timeout=30)
     next((b for b in at.button if "Confirm & Lock" in b.label)).click().run(timeout=30)

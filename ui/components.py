@@ -413,13 +413,49 @@ def stepper(current_step: str = "Case", steps: Optional[List[str]] = None) -> st
             curr_idx = idx
             break
 
+    # Real state checks per B5
+    is_extracted = (st.session_state.get("locked_case") is not None or st.session_state.get("extracted_case") is not None)
+    is_locked = (st.session_state.get("locked_case") is not None)
+    is_scored = (st.session_state.get("score_result") is not None)
+    is_cam = (st.session_state.get("cam_markdown") is not None)
+
     items_html = []
     for idx, step_name in enumerate(steps):
         clean_name = _escape(step_name)
         step_num = idx + 1
+        is_active = (step_name.lower() in clean_curr or clean_curr in step_name.lower())
 
-        if idx < curr_idx:
-            # Completed step
+        # Determine real completion state
+        if idx == 0:
+            step_completed = True
+        elif idx == 1:
+            step_completed = is_locked
+        elif idx == 2:
+            step_completed = is_scored
+        elif idx == 3:
+            step_completed = is_cam
+        else:
+            step_completed = False
+
+        if is_active:
+            # Active step styling
+            circle_content = "✓" if step_completed else str(step_num)
+            circle = f"""<span style="
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 22px;
+                height: 22px;
+                border-radius: 50%;
+                background-color: {COLOR_NAVY};
+                color: #FFFFFF;
+                font-size: 11px;
+                font-weight: 700;
+                margin-right: 8px;
+            ">{circle_content}</span>"""
+            label_style = f"font-size: 13px; font-weight: 700; color: {COLOR_NAVY}; border-bottom: 2px solid {COLOR_TEAL}; padding-bottom: 2px;"
+        elif step_completed:
+            # Completed inactive step
             circle = f"""<span style="
                 display: inline-flex;
                 align-items: center;
@@ -434,24 +470,8 @@ def stepper(current_step: str = "Case", steps: Optional[List[str]] = None) -> st
                 margin-right: 8px;
             ">✓</span>"""
             label_style = f"font-size: 13px; font-weight: 600; color: {COLOR_NAVY};"
-        elif idx == curr_idx:
-            # Active step
-            circle = f"""<span style="
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                width: 22px;
-                height: 22px;
-                border-radius: 50%;
-                background-color: {COLOR_NAVY};
-                color: #FFFFFF;
-                font-size: 11px;
-                font-weight: 700;
-                margin-right: 8px;
-            ">{step_num}</span>"""
-            label_style = f"font-size: 13px; font-weight: 700; color: {COLOR_NAVY}; border-bottom: 2px solid {COLOR_TEAL}; padding-bottom: 2px;"
         else:
-            # Future step
+            # Incomplete inactive step
             circle = f"""<span style="
                 display: inline-flex;
                 align-items: center;
