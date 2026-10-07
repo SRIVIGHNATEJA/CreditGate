@@ -45,12 +45,29 @@ st.markdown("""
         color: #FFFFFF !important;
         font-weight: 600;
         border-radius: 6px;
+        box-shadow: 0 1px 2px 0 rgba(15, 118, 110, 0.2);
+        transition: all 0.15s ease-in-out;
+    }
+    .stButton > button[kind="primary"]:hover {
+        background-color: #0D655E !important;
+        border-color: #0D655E !important;
+        box-shadow: 0 2px 4px 0 rgba(15, 118, 110, 0.3);
     }
     .stButton > button[kind="secondary"] {
         background-color: #FFFFFF !important;
-        border-color: #E2E8F0 !important;
+        border-color: #CBD5E1 !important;
         color: #0F766E !important;
+        font-weight: 600;
         border-radius: 6px;
+        transition: all 0.15s ease-in-out;
+    }
+    .stButton > button[kind="secondary"]:hover {
+        background-color: #F8FAFC !important;
+        border-color: #0F766E !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        border-color: #E2E8F0 !important;
+        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
     }
     .gate-card-hold {
         background-color: #F8FAFC;

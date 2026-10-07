@@ -90,6 +90,17 @@ with tab_cam:
             col_pad_l, col_cam, col_pad_r = st.columns([1, 10, 1])
             with col_cam:
                 with st.container(border=True):
+                    header_html = f"""<div style="border-bottom: 2px solid #0F766E; padding-bottom: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div style="font-size: 11px; font-weight: 700; color: #0F766E; letter-spacing: 0.08em; text-transform: uppercase;">CreditGate Risk Assessment Division</div>
+                            <div style="font-size: 18px; font-weight: 800; color: #0B1F3A; letter-spacing: -0.02em;">CREDIT APPRAISAL MEMORANDUM</div>
+                        </div>
+                        <div style="text-align: right; font-size: 11px; color: #64748B;">
+                            <div><strong>Ref:</strong> {st.session_state.app_id}</div>
+                            <div><strong>Classification:</strong> CREDIT COMMITTEE CONFIDENTIAL</div>
+                        </div>
+                    </div>"""
+                    st.markdown("\n".join(line.strip() for line in header_html.splitlines() if line.strip()), unsafe_allow_html=True)
                     st.markdown(st.session_state.cam_markdown)
 
 # ============================================================================

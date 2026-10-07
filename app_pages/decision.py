@@ -292,9 +292,9 @@ if res is not None:
             )
 
         # --------------------------------------------------------------------
-        # 3. FIVE-CS HORIZONTAL BARS WITH THE 40 FLOOR MARKED
+        # 3. FIVE-CS RISK ANALYTICS: PILLARS & MULTI-DIMENSIONAL GEOMETRY
         # --------------------------------------------------------------------
-        st.markdown("#### Five Cs Pillar Scores")
+        st.markdown("#### Five Cs Risk Analytics: Pillars & Multi-Dimensional Geometry")
         c_labels = ["Conditions", "Collateral", "Capital", "Capacity", "Character"]
         c_scores = [
             float(res.five_cs.get("CONDITIONS", Decimal("0"))),
@@ -323,28 +323,70 @@ if res is not None:
             annotation_text="Weakest-Link Floor (40.0)",
             annotation_position="top left",
             annotation_font_color="#B91C1C",
-            annotation_font_size=12,
+            annotation_font_size=11,
         )
         fig_h.update_layout(
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             xaxis=dict(
                 range=[0, 100],
-                title=dict(text="Pillar Score (0-100)", font=dict(color="#1F2937")),
+                title=dict(text="Pillar Score (0-100)", font=dict(color="#1F2937", size=11)),
                 gridcolor="#E2E8F0",
                 zerolinecolor="#E2E8F0",
-                tickfont=dict(color="#1F2937"),
+                tickfont=dict(color="#1F2937", size=10),
             ),
             yaxis=dict(
                 title="",
                 gridcolor="#E2E8F0",
-                tickfont=dict(color="#1F2937"),
+                tickfont=dict(color="#1F2937", size=11),
             ),
             height=280,
-            margin=dict(l=20, r=20, t=30, b=20),
+            margin=dict(l=10, r=10, t=25, b=20),
             showlegend=False,
         )
-        st.plotly_chart(fig_h, width="stretch")
+
+        r_categories = ["Character", "Capacity", "Capital", "Collateral", "Conditions"]
+        r_scores = [
+            float(res.five_cs.get("CHARACTER", Decimal("0"))),
+            float(res.five_cs.get("CAPACITY", Decimal("0"))),
+            float(res.five_cs.get("CAPITAL", Decimal("0"))),
+            float(res.five_cs.get("COLLATERAL", Decimal("0"))),
+            float(res.five_cs.get("CONDITIONS", Decimal("0"))),
+        ]
+        fig_r = go.Figure()
+        fig_r.add_trace(go.Scatterpolar(
+            r=r_scores + [r_scores[0]],
+            theta=r_categories + [r_categories[0]],
+            fill='toself',
+            name='Five Cs Score',
+            line=dict(color='#0F766E', width=2),
+            fillcolor='rgba(15, 118, 110, 0.2)',
+        ))
+        fig_r.add_trace(go.Scatterpolar(
+            r=[40, 40, 40, 40, 40, 40],
+            theta=r_categories + [r_categories[0]],
+            name='Floor (40.0)',
+            line=dict(color='#B91C1C', width=1.5, dash='dash'),
+        ))
+        fig_r.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            polar=dict(
+                bgcolor="rgba(0,0,0,0)",
+                radialaxis=dict(visible=True, range=[0, 100], gridcolor="#E2E8F0", tickfont=dict(color="#64748B", size=9)),
+                angularaxis=dict(gridcolor="#E2E8F0", tickfont=dict(color="#1F2937", size=10)),
+            ),
+            showlegend=True,
+            legend=dict(font=dict(color="#1F2937", size=10), orientation="h", y=-0.15, x=0.05),
+            height=280,
+            margin=dict(l=20, r=20, t=20, b=30),
+        )
+
+        chart_c1, chart_c2 = st.columns([3, 2], gap="medium")
+        with chart_c1:
+            st.plotly_chart(fig_h, width="stretch")
+        with chart_c2:
+            st.plotly_chart(fig_r, width="stretch")
 
         # --------------------------------------------------------------------
         # 4. "WHY THIS DECISION" LIST BUILT FROM DEDUCTION TRAIL
@@ -373,48 +415,6 @@ if res is not None:
             st.dataframe(pd.DataFrame(deduct_records), width="stretch", hide_index=True)
         else:
             render_callout("Applicant scored 100.0/100 across all evaluated parameters with zero deductions.", title="Zero Deductions", variant="success")
-
-        # --------------------------------------------------------------------
-        # 5. RADAR CHART IN SECONDARY EXPANDER
-        # --------------------------------------------------------------------
-        with st.expander(":material/radar: View Five Cs Radar Geometry", expanded=False):
-            r_categories = ["Character", "Capacity", "Capital", "Collateral", "Conditions"]
-            r_scores = [
-                float(res.five_cs.get("CHARACTER", Decimal("0"))),
-                float(res.five_cs.get("CAPACITY", Decimal("0"))),
-                float(res.five_cs.get("CAPITAL", Decimal("0"))),
-                float(res.five_cs.get("COLLATERAL", Decimal("0"))),
-                float(res.five_cs.get("CONDITIONS", Decimal("0"))),
-            ]
-            fig_r = go.Figure()
-            fig_r.add_trace(go.Scatterpolar(
-                r=r_scores + [r_scores[0]],
-                theta=r_categories + [r_categories[0]],
-                fill='toself',
-                name='Five Cs Score',
-                line=dict(color='#0F766E', width=2),
-                fillcolor='rgba(15, 118, 110, 0.2)',
-            ))
-            fig_r.add_trace(go.Scatterpolar(
-                r=[40, 40, 40, 40, 40, 40],
-                theta=r_categories + [r_categories[0]],
-                name='Weakest-Link Floor (40.0)',
-                line=dict(color='#B91C1C', width=1.5, dash='dash'),
-            ))
-            fig_r.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                polar=dict(
-                    bgcolor="rgba(0,0,0,0)",
-                    radialaxis=dict(visible=True, range=[0, 100], gridcolor="#E2E8F0", tickfont=dict(color="#1F2937")),
-                    angularaxis=dict(gridcolor="#E2E8F0", tickfont=dict(color="#1F2937")),
-                ),
-                showlegend=True,
-                legend=dict(font=dict(color="#1F2937")),
-                height=340,
-                margin=dict(l=30, r=30, t=20, b=20),
-            )
-            st.plotly_chart(fig_r, width="stretch")
 
         # --------------------------------------------------------------------
         # 6. ADVERSE MEDIA REVIEW AS BORDERED FINDING CARDS (INLINE ACTIONS)
