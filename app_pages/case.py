@@ -92,7 +92,10 @@ cohort_options = [
 ]
 active_cohort = st.session_state.get("active_cohort_selection", cohort_options[1])
 active_idx = cohort_options.index(active_cohort) if active_cohort in cohort_options else 1
-selected_cohort = st.selectbox("Quick-Load Test Cohort", cohort_options, index=active_idx, key="case_cohort_select")
+if "case_cohort_select" in st.session_state:
+    selected_cohort = st.selectbox("Quick-Load Test Cohort", cohort_options, key="case_cohort_select")
+else:
+    selected_cohort = st.selectbox("Quick-Load Test Cohort", cohort_options, index=active_idx, key="case_cohort_select")
 if selected_cohort != active_cohort:
     select_and_reset_cohort(selected_cohort)
     st.rerun()
@@ -196,22 +199,41 @@ with col_borrower:
         else:
             render_callout(f"PAN 4th character '{pan_check.get('pan_entity_char')}' aligns with {pan_check.get('pan_entity_type')}.", title="Entity Verified", variant="success")
 
-        bcol1, bcol2 = st.columns(2)
-        with bcol1:
-            render_kpi_card("Entity Status", "Active Corporate" if is_corporate else "Proprietorship", subtext="MCA Status")
-            v_years = cin_parsed_data["business_vintage_years"] if (cin_parsed_data and "business_vintage_years" in cin_parsed_data) else 5
-            render_kpi_card("Operating Vintage", f"{v_years} Years", subtext="Incorporation")
-        with bcol2:
-            raw_sec = cin_parsed_data["macro_sector"] if (cin_parsed_data and "macro_sector" in cin_parsed_data) else "General Corporate"
-            sec_short = raw_sec[:22] + "..." if len(raw_sec) > 22 else raw_sec
-            render_kpi_card("Industry Sector", sec_short, subtext="NIC Taxonomy")
-            s_name = cin_parsed_data["state_name"] if (cin_parsed_data and "state_name" in cin_parsed_data) else "Pan-India"
-            render_kpi_card("Jurisdiction State", s_name, subtext="RoC Jurisdiction")
+        if is_corporate:
+            bcol1, bcol2 = st.columns(2)
+            with bcol1:
+                render_kpi_card("Entity Status", "Active Corporate", subtext="MCA Status")
+                v_years = cin_parsed_data["business_vintage_years"] if (cin_parsed_data and "business_vintage_years" in cin_parsed_data) else 5
+                render_kpi_card("Operating Vintage", f"{v_years} Years", subtext="Incorporation")
+            with bcol2:
+                raw_sec = cin_parsed_data["macro_sector"] if (cin_parsed_data and "macro_sector" in cin_parsed_data) else "General Corporate"
+                sec_short = raw_sec[:22] + "..." if len(raw_sec) > 22 else raw_sec
+                render_kpi_card("Industry Sector", sec_short, subtext="NIC Taxonomy")
+                s_name = cin_parsed_data["state_name"] if (cin_parsed_data and "state_name" in cin_parsed_data) else "Pan-India"
+                render_kpi_card("Jurisdiction State", s_name, subtext="RoC Jurisdiction")
+        else:
+            bcol1, bcol2 = st.columns(2)
+            with bcol1:
+                render_kpi_card("Entity Mode", "Unregistered MSME", subtext="Non-Corporate Entity")
+                man_vin = st.session_state.get("case_manual_vintage", 7)
+                render_kpi_card("Operating Vintage", f"{man_vin} Years", subtext="Promoter Track Record")
+            with bcol2:
+                man_sec = st.session_state.get("case_manual_sector", list(NIC_SECTOR_TAXONOMY.values())[0])
+                sec_short = man_sec[:22] + "..." if len(man_sec) > 22 else man_sec
+                render_kpi_card("Industry Sector", sec_short, subtext="MSME Activity")
+                render_kpi_card("Registration Base", "State Udyam Portal", subtext="MSME Registration")
 
 # RIGHT COLUMN: FACILITY TERMS (ONE st.form per B1)
 with col_facility:
     with st.container(border=True):
         st.markdown("#### :material/payments: Facility Terms")
+        
+        # Bank Policy Pricing Context
+        policy_spread = "+3.75%" if is_c1 else ("+7.25%" if is_c2 else "+5.00%")
+        policy_tier_name = "Tier-1 Prime" if is_c1 else ("Tier-3 Stressed" if is_c2 else "Tier-2 Moderate")
+        pricing_badge = f'<div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid #0F766E; border-radius: 6px; padding: 6px 12px; margin-bottom: 12px; font-size: 12px; color: #1E293B;"><strong>Bank Policy Pricing:</strong> RBI Repo (6.50%) + {policy_spread} Spread ({policy_tier_name})</div>'
+        st.markdown(pricing_badge, unsafe_allow_html=True)
+
         with st.form(key="case_facility_form"):
             form_loan = st.number_input(
                 "Requested Facility (₹)",
@@ -228,14 +250,16 @@ with col_facility:
                 value=int(st.session_state.facility_tenure_months),
                 step=6,
                 key="form_tenure_months",
+                help="Applicant requested repayment amortization horizon."
             )
             form_rate = st.slider(
-                "Indicative Rate (%)",
+                "Policy Lending Rate (%)",
                 min_value=7.5,
                 max_value=24.0,
                 value=float(st.session_state.facility_interest_rate),
                 step=0.25,
                 key="form_interest_rate",
+                help="Derived autonomously from Bank Risk Policy matrix. Adjust if discretionary credit committee concession is sanctioned."
             )
             form_collat = st.number_input(
                 "Pledged Collateral (₹)",

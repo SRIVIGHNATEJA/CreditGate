@@ -9,6 +9,8 @@ from core.audit_logger import verify_chain
 from core.cam_generator import (
     generate_cam_markdown,
     generate_cam_html,
+    generate_cam_docx,
+    generate_cam_pdf,
     CamGenerationError,
 )
 from ui.state import get_app_context
@@ -61,26 +63,52 @@ with tab_cam:
                 render_callout(f"CAM Generation Notice: {e}", title="Generation Error", variant="error")
 
         if st.session_state.cam_markdown:
-            # Markdown and HTML download buttons in one balanced action row above the memo
-            col_d1, col_d2 = st.columns(2)
+            # Word, PDF, and Markdown download buttons in balanced action row
+            col_d1, col_d2, col_d3 = st.columns(3)
             with col_d1:
+                docx_bytes = generate_cam_docx(
+                    credit_case=st.session_state.locked_case,
+                    score_result=st.session_state.score_result,
+                    cin_parsed_data=cin_parsed_data,
+                    officer_notes=st.session_state.officer_notes,
+                    executive_override=st.session_state.executive_override,
+                    audit_events=st.session_state.audit_trail,
+                    adverse_media_report=st.session_state.current_research_report,
+                    app_id=st.session_state.app_id,
+                    pan=pan_input,
+                )
                 st.download_button(
-                    label=":material/download: Download Formal CAM (.md)",
-                    data=st.session_state.cam_markdown,
-                    file_name=f"CAM_{st.session_state.app_id}.md",
-                    mime="text/markdown",
+                    label=":material/download: Download Formal CAM (.docx)",
+                    data=docx_bytes,
+                    file_name=f"CAM_{st.session_state.app_id}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     width="stretch",
                 )
             with col_d2:
-                html_cam = generate_cam_html(
-                    cam_markdown=st.session_state.cam_markdown,
+                pdf_bytes = generate_cam_pdf(
+                    credit_case=st.session_state.locked_case,
+                    score_result=st.session_state.score_result,
+                    cin_parsed_data=cin_parsed_data,
+                    officer_notes=st.session_state.officer_notes,
+                    executive_override=st.session_state.executive_override,
+                    audit_events=st.session_state.audit_trail,
+                    adverse_media_report=st.session_state.current_research_report,
                     app_id=st.session_state.app_id,
+                    pan=pan_input,
                 )
                 st.download_button(
-                    label=":material/download: Download Formal CAM (.html)",
-                    data=html_cam,
-                    file_name=f"CAM_{st.session_state.app_id}.html",
-                    mime="text/html",
+                    label=":material/download: Download Printable CAM (.pdf)",
+                    data=pdf_bytes,
+                    file_name=f"CAM_{st.session_state.app_id}.pdf",
+                    mime="application/pdf",
+                    width="stretch",
+                )
+            with col_d3:
+                st.download_button(
+                    label=":material/download: Download Structured CAM (.md)",
+                    data=st.session_state.cam_markdown,
+                    file_name=f"CAM_{st.session_state.app_id}.md",
+                    mime="text/markdown",
                     width="stretch",
                 )
 

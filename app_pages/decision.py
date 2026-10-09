@@ -469,16 +469,22 @@ if res is not None:
         )
         anchored_query = build_search_query(company_nm, cin=active_cin)
 
+        is_demo_cohort = bool(cohort_selection and cohort_selection != "None (Manual Upload)")
         col_q1, col_q2 = st.columns([3, 1])
         with col_q1:
             st.code(f"Anchored Identity Query: {anchored_query}", language="sql")
         with col_q2:
-            use_synthetic_demo = st.checkbox(
-                ":material/science: Synthetic Demo Mode",
-                value=not bool(os.getenv("TAVILY_API_KEY")),
-                help="Generates simulated legal/adverse records watermarked with [SYNTHETIC DEMO DATA]",
-                key="chk_synthetic_demo",
-            )
+            if is_demo_cohort:
+                st.markdown(f"Docket Mode: &nbsp; {status_pill('Curated Simulation', variant='info')}", unsafe_allow_html=True)
+                st.caption("Pre-calibrated e-Courts & NCLT orders")
+                use_synthetic_demo = True
+            else:
+                use_synthetic_demo = st.checkbox(
+                    ":material/science: Simulation Mode",
+                    value=not bool(os.getenv("TAVILY_API_KEY")),
+                    help="Generates simulated legal/adverse records watermarked with [SYNTHETIC DEMO DATA]",
+                    key="chk_synthetic_demo",
+                )
 
         cache_key = (active_cin, bool(use_synthetic_demo))
         if st.session_state.last_research_cache_key != cache_key:
@@ -594,7 +600,7 @@ if res is not None:
             st.caption("Record on-site inspection observations, promoter interviews, and qualitative due diligence.")
 
             st.markdown("<div style='font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; margin-bottom: 4px;'>Quick Observation Presets:</div>", unsafe_allow_html=True)
-            col_pr1, col_pr2, col_pr3 = st.columns(3)
+            col_pr1, col_pr2, col_pr3, col_pr4 = st.columns(4)
             with col_pr1:
                 if st.button("Plant Inspection", key="btn_pr_plant", width="stretch"):
                     st.session_state.txt_field_note = "Plant inspection verified: Machinery in operational condition at 85% capacity utilization. Physical stock matches GSTR-3B filings."
@@ -604,8 +610,12 @@ if res is not None:
                     st.session_state.txt_field_note = "Promoter interview concluded: Clear market reputation, satisfactory vintage in the sector, and clean track record with local suppliers."
                     st.rerun()
             with col_pr3:
-                if st.button("Working Capital Cycle", key="btn_pr_wc", width="stretch"):
+                if st.button("Working Capital", key="btn_pr_wc", width="stretch"):
                     st.session_state.txt_field_note = "Working capital verification: Receivables turnover matches standard 45-day commercial terms with low single-debtor concentration."
+                    st.rerun()
+            with col_pr4:
+                if st.button("Tax & Filings", key="btn_pr_tax", width="stretch"):
+                    st.session_state.txt_field_note = "Tax governance check: GSTR-3B monthly filings and advance tax payments match annual audited financials without statutory demands."
                     st.rerun()
 
             fn_text = st.text_area("Field Visit Observation / Qualitative Notes", placeholder="e.g. Visited plant in Okhla. Machinery in operational condition, factory working at 85% utilization.", key="txt_field_note")

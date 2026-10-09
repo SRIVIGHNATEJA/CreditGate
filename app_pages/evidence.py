@@ -229,17 +229,31 @@ if not has_all_docs:
 else:
     if st.session_state.extracted_case is None:
         with st.container(border=True):
-            engine_choice = st.radio(
-                "Ingestion Engine",
-                [
-                    "Deterministic Native (PyMuPDF)",
-                    "Gemini Multimodal (Vision)"
-                ],
-                index=0,
-                horizontal=True,
-                key="sel_extraction_engine",
-            )
-            use_gemini = "Gemini" in engine_choice
+            col_e1, col_e2 = st.columns([2, 1])
+            with col_e1:
+                engine_choice = st.radio(
+                    "Ingestion Engine Pipeline",
+                    [
+                        "Deterministic Native (PyMuPDF Offline)",
+                        "Multimodal AI (Gemini 3.5 Flash Lite)"
+                    ],
+                    index=0,
+                    horizontal=True,
+                    key="sel_extraction_engine",
+                )
+                use_gemini = "Gemini" in engine_choice
+            with col_e2:
+                key_configured = bool(os.getenv("GEMINI_API_KEY") and os.getenv("GEMINI_API_KEY") != "your_gemini_api_key_here")
+                if use_gemini:
+                    if key_configured:
+                        st.markdown(f"Status: &nbsp; {status_pill('AI Connected', variant='info')}", unsafe_allow_html=True)
+                        st.caption("Active model: `gemini-3.5-flash-lite`")
+                    else:
+                        st.markdown(f"Status: &nbsp; {status_pill('Offline Mode (Key Unset)', variant='conditional')}", unsafe_allow_html=True)
+                        st.caption("Auto-engaging deterministic fallback")
+                else:
+                    st.markdown(f"Status: &nbsp; {status_pill('Deterministic Active', variant='info')}", unsafe_allow_html=True)
+                    st.caption("Local OCR & Regex, zero network latency")
 
         if st.button(":material/bolt: Run Extraction (3 Parallel Threads)", type="primary", key="btn_run_extraction_main"):
             with st.status("Extracting and verifying documents...", expanded=True) as status:

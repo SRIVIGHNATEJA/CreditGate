@@ -556,12 +556,17 @@ def extract_all_documents(
         getattr(itr_data, "redaction_events", [])
     )
 
+    diagnostic_code = "CONNECTED" if primary_engine == "AI_GEMINI" else ("FORCE_DETERMINISTIC" if force_deterministic else ("KEY_MISSING" if not (gemini_api_key or GEMINI_API_KEY) else "FALLBACK_DETERMINISTIC"))
+    engine_display = "Multimodal AI (Gemini 3.5 Flash Lite)" if primary_engine == "AI_GEMINI" else "Deterministic Regex (PyMuPDF)"
+
     metadata = {
         "execution_latency_seconds": round(elapsed_time, 3),
         "bank_reconciled": is_reconciled,
         "bank_reconciliation_difference": str(diff),
         "extraction_model": MODEL_EXTRACTION,
         "extraction_engine": primary_engine,
+        "diagnostic_code": diagnostic_code,
+        "engine_display": engine_display,
         "parallel_workers": 3,
         "status": "SUCCESS",
         "redaction_events": all_redaction_events

@@ -1,6 +1,6 @@
 from enum import IntEnum
 from decimal import Decimal
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Any
 
 
 class Verdict(IntEnum):
@@ -88,3 +88,66 @@ COLLATERAL_COVERAGE_BANDS: List[Tuple[Decimal, Decimal, Decimal]] = [
     (Decimal("0.50"), Decimal("1.00"), Decimal("50.0")),
     (Decimal("0.00"), Decimal("0.50"), Decimal("20.0")),
 ]
+
+# ============================================================================
+# BANK RISK-BASED FACILITY PRICING MATRIX
+# Benchmark: RBI Repo Rate / MCLR Base Rate = 6.50%
+# ============================================================================
+BANK_REPO_BENCHMARK_RATE = Decimal("6.50")
+
+BANK_PRICING_SPREADS: Dict[Verdict, Dict[str, Any]] = {
+    Verdict.APPROVE: {
+        "spread": Decimal("3.75"),
+        "tier_name": "Tier-1 Prime MSME",
+        "rate": Decimal("10.25"),  # 6.50% + 3.75%
+    },
+    Verdict.CONDITIONAL: {
+        "spread": Decimal("5.00"),
+        "tier_name": "Tier-2 Moderate Risk",
+        "rate": Decimal("11.50"),  # 6.50% + 5.00%
+    },
+    Verdict.REJECT: {
+        "spread": Decimal("7.25"),
+        "tier_name": "Tier-3 Stressed / Knockout",
+        "rate": Decimal("13.75"),  # 6.50% + 7.25% (or Denied)
+    },
+    Verdict.INSUFFICIENT_DATA: {
+        "spread": Decimal("5.00"),
+        "tier_name": "Incomplete File",
+        "rate": Decimal("11.50"),
+    },
+}
+
+
+def derive_facility_pricing(
+    verdict: Verdict,
+    requested_amount: Decimal,
+    tenor_months: int,
+    concession_spread: Decimal = Decimal("0.00"),
+) -> Dict[str, Any]:
+    """
+    Derives the bank risk-based facility pricing and monthly EMI from policy benchmark and score tier.
+    """
+    pricing_tier = BANK_PRICING_SPREADS.get(verdict, BANK_PRICING_SPREADS[Verdict.CONDITIONAL])
+    base_spread = pricing_tier["spread"]
+    effective_spread = base_spread + concession_spread
+    effective_rate = BANK_REPO_BENCHMARK_RATE + effective_spread
+
+    from core.analyser import calculate_monthly_emi
+    monthly_emi = calculate_monthly_emi(
+        principal=requested_amount,
+        annual_rate_pct=effective_rate,
+        tenure_months=tenor_months
+    )
+
+    return {
+        "benchmark_rate": BANK_REPO_BENCHMARK_RATE,
+        "base_spread": base_spread,
+        "concession_spread": concession_spread,
+        "effective_spread": effective_spread,
+        "effective_rate": effective_rate,
+        "tier_name": pricing_tier["tier_name"],
+        "monthly_emi": monthly_emi,
+        "sanctionable": verdict != Verdict.REJECT
+    }
+

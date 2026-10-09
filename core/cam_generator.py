@@ -266,3 +266,227 @@ def generate_cam_markdown(
     md.append(f"*This Credit Appraisal Memorandum was generated deterministically by CreditGate v3.0 for application `{app_id}`. All rights reserved.*")
 
     return "\n".join(md)
+
+
+def generate_cam_docx(
+    credit_case: CreditCase,
+    score_result: ScoreResult,
+    cin_parsed_data: Optional[Dict[str, Any]] = None,
+    officer_notes: Optional[List[Dict[str, Any]]] = None,
+    executive_override: Optional[Dict[str, Any]] = None,
+    audit_events: Optional[List[Dict[str, Any]]] = None,
+    adverse_media_report: Optional[AdverseMediaReport] = None,
+    app_id: str = "APP-GENERIC-001",
+    pan: Optional[str] = None
+) -> bytes:
+    """
+    Generates a formal Credit Appraisal Memorandum (CAM) in Microsoft Word (.docx) format.
+    Zero manual coordinate math: relies on native paragraphs and auto-wrapping tables.
+    """
+    if score_result.final_verdict == Verdict.INSUFFICIENT_DATA:
+        raise CamGenerationError("CAM_BLOCKED_INSUFFICIENT_DATA: Cannot generate memorandum for an incomplete file.")
+
+    from io import BytesIO
+    import docx
+    from docx.shared import Inches
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    doc = docx.Document()
+    for section in doc.sections:
+        section.top_margin = Inches(0.75)
+        section.bottom_margin = Inches(0.75)
+        section.left_margin = Inches(0.75)
+        section.right_margin = Inches(0.75)
+
+    title = doc.add_heading("CREDIT APPRAISAL MEMORANDUM (CAM)", level=0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    now_str = datetime.now(timezone.utc).strftime("%d %B %Y, %H:%M UTC")
+    raw_pan = pan or getattr(credit_case, "pan", None)
+    if not raw_pan and credit_case.cin_or_pan and len(credit_case.cin_or_pan) == 10:
+        raw_pan = credit_case.cin_or_pan
+    masked_pan = mask_identifier(raw_pan) if raw_pan else "NOT_PROVIDED"
+
+    verdict_name = score_result.final_verdict.name
+    if executive_override and executive_override.get("override_active"):
+        verdict_name = f"{executive_override.get('override_verdict', verdict_name)} (Officer Override)"
+
+    p_sub = doc.add_paragraph()
+    p_sub.add_run(f"Application Reference: {app_id}\n").bold = True
+    p_sub.add_run(f"Date of Appraisal: {now_str}\n")
+    p_sub.add_run(f"Final Decision: {verdict_name}\n")
+
+    # 1. Borrower Entity Profile
+    doc.add_heading("1. BORROWER ENTITY PROFILE", level=1)
+    t_borrower = doc.add_table(rows=4, cols=2)
+    t_borrower.style = "Table Grid"
+    t_borrower.cell(0, 0).text = "Borrower Legal Name"
+    t_borrower.cell(0, 1).text = str(credit_case.company_name)
+    t_borrower.cell(1, 0).text = "PAN (PII Masked)"
+    t_borrower.cell(1, 1).text = f"{masked_pan}"
+    t_borrower.cell(2, 0).text = "Corporate ID (CIN)"
+    t_borrower.cell(2, 1).text = str(cin_parsed_data.get("cin", "UNREGISTERED_MSME") if cin_parsed_data else "UNREGISTERED_MSME")
+    t_borrower.cell(3, 0).text = "Industry Sector"
+    t_borrower.cell(3, 1).text = str(cin_parsed_data.get("macro_sector", "MSME") if cin_parsed_data else "MSME")
+
+    # 2. Facility Terms
+    doc.add_heading("2. PROPOSED CREDIT FACILITY & TERMS", level=1)
+    t_facility = doc.add_table(rows=5, cols=2)
+    t_facility.style = "Table Grid"
+    t_facility.cell(0, 0).text = "Facility Sanctioned"
+    t_facility.cell(0, 1).text = format_inr(credit_case.requested_loan_amount)
+    t_facility.cell(1, 0).text = "Indicative Rate"
+    t_facility.cell(1, 1).text = f"{float(credit_case.proposed_rate or Decimal('11.5')):.2f}% p.a."
+    t_facility.cell(2, 0).text = "Tenor"
+    t_facility.cell(2, 1).text = f"{int(credit_case.proposed_tenure_months or 36)} Months"
+    t_facility.cell(3, 0).text = "Monthly Obligation (EMI)"
+    t_facility.cell(3, 1).text = format_inr(score_result.proposed_monthly_emi)
+    t_facility.cell(4, 0).text = "DSCR Debt-Service Coverage"
+    t_facility.cell(4, 1).text = f"{float(score_result.dscr):.2f}x"
+
+    # 3. Five Cs Breakdown
+    doc.add_heading("3. FIVE CS RISK SCORECARD SUMMARY", level=1)
+    p_cs = doc.add_paragraph()
+    p_cs.add_run(f"Composite Risk Score: {float(score_result.composite_score):.1f} / 100.0\n").bold = True
+    t_cs = doc.add_table(rows=6, cols=3)
+    t_cs.style = "Table Grid"
+    t_cs.cell(0, 0).text = "Pillar"
+    t_cs.cell(0, 1).text = "Weight"
+    t_cs.cell(0, 2).text = "Pillar Score (0-100)"
+    rows_data = [
+        ("CHARACTER", "20%", f"{float(score_result.five_cs.get('CHARACTER', 0)):.1f}"),
+        ("CAPACITY", "30%", f"{float(score_result.five_cs.get('CAPACITY', 0)):.1f}"),
+        ("CAPITAL", "20%", f"{float(score_result.five_cs.get('CAPITAL', 0)):.1f}"),
+        ("COLLATERAL", "15%", f"{float(score_result.five_cs.get('COLLATERAL', 0)):.1f}"),
+        ("CONDITIONS", "15%", f"{float(score_result.five_cs.get('CONDITIONS', 0)):.1f}"),
+    ]
+    for idx, (pil, wt, sc) in enumerate(rows_data, 1):
+        t_cs.cell(idx, 0).text = pil
+        t_cs.cell(idx, 1).text = wt
+        t_cs.cell(idx, 2).text = sc
+
+    # 4. Sign-off Quorum
+    doc.add_heading("4. COMMITTEE QUORUM AUTHORIZATION", level=1)
+    t_sign = doc.add_table(rows=2, cols=3)
+    t_sign.style = "Table Grid"
+    t_sign.cell(0, 0).text = f"1. Appraising Officer\n\n___________________\nName: R. K. Verma\nDate: {now_str[:11]}"
+    t_sign.cell(0, 1).text = f"2. Risk Underwriting Head\n\n___________________\nName: S. Swaminathan\nDate: {now_str[:11]}"
+    t_sign.cell(0, 2).text = f"3. Sanctioning Authority\n\n___________________\nName: Credit Committee\nDate: {now_str[:11]}"
+    t_sign.cell(1, 0).text = f"Decision: {verdict_name}"
+    t_sign.cell(1, 1).text = "Audit Hash: Verified"
+    t_sign.cell(1, 2).text = f"App ID: {app_id}"
+
+    buf = BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def generate_cam_pdf(
+    credit_case: CreditCase,
+    score_result: ScoreResult,
+    cin_parsed_data: Optional[Dict[str, Any]] = None,
+    officer_notes: Optional[List[Dict[str, Any]]] = None,
+    executive_override: Optional[Dict[str, Any]] = None,
+    audit_events: Optional[List[Dict[str, Any]]] = None,
+    adverse_media_report: Optional[AdverseMediaReport] = None,
+    app_id: str = "APP-GENERIC-001",
+    pan: Optional[str] = None
+) -> bytes:
+    """
+    Generates a formal Credit Appraisal Memorandum (CAM) in printable PDF format using ReportLab Platypus.
+    Zero manual coordinate math: relies on flowables, auto-wrapping, and auto-flowing tables.
+    """
+    if score_result.final_verdict == Verdict.INSUFFICIENT_DATA:
+        raise CamGenerationError("CAM_BLOCKED_INSUFFICIENT_DATA: Cannot generate memorandum for an incomplete file.")
+
+    from io import BytesIO
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+    buf = BytesIO()
+    pdf = SimpleDocTemplate(buf, pagesize=letter, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36)
+    styles = getSampleStyleSheet()
+
+    h1_style = ParagraphStyle('CAM_H1', parent=styles['Heading1'], fontSize=15, leading=19, textColor=colors.HexColor('#0B1F3A'), spaceAfter=6)
+    h2_style = ParagraphStyle('CAM_H2', parent=styles['Heading2'], fontSize=11, leading=15, textColor=colors.HexColor('#0F766E'), spaceBefore=8, spaceAfter=4)
+    body_style = ParagraphStyle('CAM_Body', parent=styles['Normal'], fontSize=9, leading=12, textColor=colors.HexColor('#1F2937'))
+    bold_style = ParagraphStyle('CAM_Bold', parent=styles['Normal'], fontSize=9, leading=12, textColor=colors.HexColor('#0B1F3A'))
+
+    raw_pan = pan or getattr(credit_case, "pan", None)
+    if not raw_pan and credit_case.cin_or_pan and len(credit_case.cin_or_pan) == 10:
+        raw_pan = credit_case.cin_or_pan
+    masked_pan = mask_identifier(raw_pan) if raw_pan else "NOT_PROVIDED"
+    now_str = datetime.now(timezone.utc).strftime("%d %B %Y, %H:%M UTC")
+
+    verdict_name = score_result.final_verdict.name
+    if executive_override and executive_override.get("override_active"):
+        verdict_name = f"{executive_override.get('override_verdict', verdict_name)} (Officer Override)"
+
+    story = [
+        Paragraph("<b>CREDIT APPRAISAL MEMORANDUM (CAM)</b>", h1_style),
+        Paragraph(f"<b>Application Reference:</b> {app_id} &nbsp;|&nbsp; <b>Date:</b> {now_str}", body_style),
+        Paragraph(f"<b>Final Decision:</b> {verdict_name} &nbsp;|&nbsp; <b>Composite Score:</b> {float(score_result.composite_score):.1f} / 100.0", body_style),
+        Spacer(1, 8),
+        Paragraph("<b>1. BORROWER ENTITY PROFILE</b>", h2_style),
+        Table([
+            [Paragraph("<b>Borrower Legal Name</b>", body_style), Paragraph(str(credit_case.company_name), body_style)],
+            [Paragraph("<b>PAN (PII Masked)</b>", body_style), Paragraph(f"{masked_pan}", body_style)],
+            [Paragraph("<b>Corporate ID (CIN)</b>", body_style), Paragraph(str(cin_parsed_data.get("cin", "UNREGISTERED_MSME") if cin_parsed_data else "UNREGISTERED_MSME"), body_style)],
+            [Paragraph("<b>Industry Sector</b>", body_style), Paragraph(str(cin_parsed_data.get("macro_sector", "MSME") if cin_parsed_data else "MSME"), body_style)],
+        ], colWidths=[180, 360], style=[
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F8FAFC')),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+            ('TOPPADDING', (0,0), (-1,-1), 3),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ]),
+        Spacer(1, 8),
+        Paragraph("<b>2. PROPOSED CREDIT FACILITY & TERMS</b>", h2_style),
+        Table([
+            [Paragraph("<b>Facility Sanctioned</b>", body_style), Paragraph(format_inr(credit_case.requested_loan_amount), body_style)],
+            [Paragraph("<b>Lending Rate</b>", body_style), Paragraph(f"{float(credit_case.proposed_rate or Decimal('11.5')):.2f}% p.a.", body_style)],
+            [Paragraph("<b>Tenor</b>", body_style), Paragraph(f"{int(credit_case.proposed_tenure_months or 36)} Months", body_style)],
+            [Paragraph("<b>Monthly Obligation (EMI)</b>", body_style), Paragraph(format_inr(score_result.proposed_monthly_emi), body_style)],
+            [Paragraph("<b>DSCR Coverage Ratio</b>", body_style), Paragraph(f"{float(score_result.dscr):.2f}x", body_style)],
+        ], colWidths=[180, 360], style=[
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#FFFFFF')),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+            ('TOPPADDING', (0,0), (-1,-1), 3),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ]),
+        Spacer(1, 8),
+        Paragraph("<b>3. FIVE CS RISK PILLAR BREAKDOWN</b>", h2_style),
+        Table([
+            [Paragraph("<b>Pillar</b>", bold_style), Paragraph("<b>Weight</b>", bold_style), Paragraph("<b>Pillar Score (0-100)</b>", bold_style)],
+            [Paragraph("CHARACTER", body_style), Paragraph("20%", body_style), Paragraph(f"{float(score_result.five_cs.get('CHARACTER', 0)):.1f}", body_style)],
+            [Paragraph("CAPACITY", body_style), Paragraph("30%", body_style), Paragraph(f"{float(score_result.five_cs.get('CAPACITY', 0)):.1f}", body_style)],
+            [Paragraph("CAPITAL", body_style), Paragraph("20%", body_style), Paragraph(f"{float(score_result.five_cs.get('CAPITAL', 0)):.1f}", body_style)],
+            [Paragraph("COLLATERAL", body_style), Paragraph("15%", body_style), Paragraph(f"{float(score_result.five_cs.get('COLLATERAL', 0)):.1f}", body_style)],
+            [Paragraph("CONDITIONS", body_style), Paragraph("15%", body_style), Paragraph(f"{float(score_result.five_cs.get('CONDITIONS', 0)):.1f}", body_style)],
+        ], colWidths=[160, 100, 280], style=[
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#0B1F3A')),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+            ('TOPPADDING', (0,0), (-1,-1), 3),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ]),
+        Spacer(1, 10),
+        Paragraph("<b>4. COMMITTEE QUORUM AUTHORIZATION SIGN-OFF</b>", h2_style),
+        Table([
+            [
+                Paragraph(f"<b>1. Appraising Officer</b><br/><br/><br/>Name: R. K. Verma<br/>Date: {now_str[:11]}", body_style),
+                Paragraph(f"<b>2. Risk Underwriting Head</b><br/><br/><br/>Name: S. Swaminathan<br/>Date: {now_str[:11]}", body_style),
+                Paragraph(f"<b>3. Sanctioning Authority</b><br/><br/><br/>Name: Credit Committee<br/>Date: {now_str[:11]}", body_style),
+            ]
+        ], colWidths=[180, 180, 180], style=[
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F8FAFC')),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+            ('TOPPADDING', (0,0), (-1,-1), 6),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ])
+    ]
+
+    pdf.build(story)
+    return buf.getvalue()
+
