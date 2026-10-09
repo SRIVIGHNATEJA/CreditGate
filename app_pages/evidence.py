@@ -229,45 +229,23 @@ if not has_all_docs:
 else:
     if st.session_state.extracted_case is None:
         with st.container(border=True):
-            st.markdown("##### Ingestion Engine Architecture")
             engine_choice = st.radio(
-                "Ingestion Engine Mode",
+                "Ingestion Engine",
                 [
-                    "Deterministic Native (PyMuPDF) • Sub-Second Offline",
-                    "Gemini Multimodal Vision (Google GenAI) • Cloud LLM"
+                    "Deterministic Native (PyMuPDF)",
+                    "Gemini Multimodal (Vision)"
                 ],
                 index=0,
                 horizontal=True,
-                help="Select between instant offline deterministic parsing (0.089s) and cloud multimodal vision extraction.",
                 key="sel_extraction_engine",
             )
             use_gemini = "Gemini" in engine_choice
-            custom_key = None
-            if use_gemini:
-                env_key = os.getenv("GEMINI_API_KEY", "")
-                custom_key = st.text_input(
-                    "Google Gemini API Key",
-                    value=st.session_state.get("custom_gemini_key", env_key if env_key != "your_gemini_api_key_here" else ""),
-                    type="password",
-                    help="Enter your GEMINI_API_KEY from Google AI Studio. Held in session state only.",
-                    key="txt_gemini_key_input"
-                )
-                if custom_key:
-                    st.session_state.custom_gemini_key = custom_key
-                if not custom_key:
-                    render_callout(
-                        "No Gemini API key supplied. Pipeline will gracefully engage the deterministic fallback parser if triggered without a key.",
-                        title="API Key Pending",
-                        variant="warning"
-                    )
-            else:
-                st.caption("Active Mode: Local deterministic PyMuPDF text & regex extraction. Zero latency (~0.089s) with arithmetic ledger verification.")
 
         if st.button(":material/bolt: Run Extraction (3 Parallel Threads)", type="primary", key="btn_run_extraction_main"):
             with st.status("Extracting and verifying documents...", expanded=True) as status:
                 t_start = time.perf_counter()
                 try:
-                    active_gemini_key = st.session_state.get("custom_gemini_key") or os.getenv("GEMINI_API_KEY")
+                    active_gemini_key = os.getenv("GEMINI_API_KEY") if use_gemini else None
                     if active_gemini_key == "your_gemini_api_key_here":
                         active_gemini_key = None
                     credit_case, meta = extract_all_documents(
