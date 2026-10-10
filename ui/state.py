@@ -264,14 +264,23 @@ def render_sidebar() -> Dict[str, Any]:
         select_and_reset_cohort(pending_cohort)
 
     with st.sidebar:
-        st.markdown("### :material/shield: CreditGate v3.0")
-        st.caption("AI MSME Underwriting Copilot")
-        st.markdown(f"**Application ID:** `{st.session_state.app_id}`")
+        st.markdown(f"""
+        <div style="padding: 2px 0 10px 0;">
+            <div style="font-size: 16px; font-weight: 800; color: #0B1F3A; letter-spacing: -0.01em;">CREDITGATE v3.0</div>
+            <div style="font-size: 11px; font-weight: 600; color: #0F766E; letter-spacing: 0.04em; text-transform: uppercase; margin-top: 2px;">
+                AI MSME Underwriting Copilot
+            </div>
+            <div style="margin-top: 8px; background: #FFFFFF; border: 1px solid #CBD5E1; border-left: 3px solid #0F766E; border-radius: 4px; padding: 5px 8px; font-size: 11px; color: #1E293B;">
+                <span style="font-size: 9px; color: #64748B; font-weight: 700; text-transform: uppercase;">Active Dossier:</span><br/>
+                <code style="font-size: 11px; font-weight: 600; color: #0B1F3A;">{st.session_state.app_id}</code>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
         st.markdown("---")
 
         # 1. Step status (Case -> Evidence -> Decision -> CAM)
         with st.container(border=True):
-            st.markdown("#### :material/alt_route: Step Status")
+            st.markdown("<div style='font-size: 11px; font-weight: 700; color: #0F766E; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 8px;'>Workflow Progression</div>", unsafe_allow_html=True)
 
             is_extracted = (st.session_state.get("locked_case") is not None or st.session_state.get("extracted_case") is not None)
             is_locked = (st.session_state.get("locked_case") is not None)
@@ -289,27 +298,27 @@ def render_sidebar() -> Dict[str, Any]:
             p_dec = status_pill("Scored", variant="approve") if is_scored else status_pill("Pending", variant="neutral")
             p_cam = status_pill("Generated", variant="approve") if is_cam else status_pill("Pending", variant="neutral")
 
-            st.markdown(f"**1. Case:** &nbsp; {p_case}", unsafe_allow_html=True)
-            st.markdown(f"**2. Evidence:** &nbsp; {p_ev}", unsafe_allow_html=True)
-            st.markdown(f"**3. Decision:** &nbsp; {p_dec}", unsafe_allow_html=True)
-            st.markdown(f"**4. CAM & Audit:** &nbsp; {p_cam}", unsafe_allow_html=True)
+            st.markdown(f"**1. Case Intake & Terms:** &nbsp; {p_case}", unsafe_allow_html=True)
+            st.markdown(f"**2. Evidence Ingestion:** &nbsp; {p_ev}", unsafe_allow_html=True)
+            st.markdown(f"**3. Risk Gate & Policy:** &nbsp; {p_dec}", unsafe_allow_html=True)
+            st.markdown(f"**4. Committee CAM Audit:** &nbsp; {p_cam}", unsafe_allow_html=True)
 
         # 2. Reset Case Button
-        if st.button(":material/restart_alt: Reset Case", key="sb_btn_reset_case", width="stretch"):
+        if st.button(":material/restart_alt: Reset Active Case", key="sb_btn_reset_case", width="stretch"):
             cur_cohort = st.session_state.get("active_cohort_selection", "Cohort 1: Prime MSME (Apex Synthetic Demo)")
             select_and_reset_cohort(cur_cohort)
             st.rerun()
 
         # 3. Audit chain status via verify_chain()
         with st.container(border=True):
-            st.markdown("#### :material/verified_user: Audit Trail")
+            st.markdown("<div style='font-size: 11px; font-weight: 700; color: #0F766E; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 6px;'>Cryptographic Audit Seal</div>", unsafe_allow_html=True)
             is_chain_valid, chain_err = verify_chain(st.session_state.get("audit_trail", []))
             if is_chain_valid:
                 evt_count = len(st.session_state.get("audit_trail", []))
-                st.markdown(f"**Chain:** &nbsp; {status_pill('Verified', variant='approve')}", unsafe_allow_html=True)
-                st.caption(f"{evt_count} events in verified hash chain")
+                st.markdown(f"**Chain Status:** &nbsp; {status_pill('Verified Chain', variant='approve')}", unsafe_allow_html=True)
+                st.caption(f"{evt_count} tamper-evident SHA-256 blocks chained")
             else:
-                st.markdown(f"**Chain:** &nbsp; {status_pill('Tampered', variant='reject')}", unsafe_allow_html=True)
+                st.markdown(f"**Chain Status:** &nbsp; {status_pill('Tampered', variant='reject')}", unsafe_allow_html=True)
                 st.caption(f"Error: {chain_err}")
 
     return get_app_context()
@@ -332,14 +341,14 @@ def get_app_context() -> Dict[str, Any]:
         if is_cin_valid:
             cin_parsed_data = parse_cin(current_cin_val)
     else:
-        manual_sector = st.session_state.get("manual_sector", list(NIC_SECTOR_TAXONOMY.values())[0])
-        manual_vintage = st.session_state.get("manual_vintage", 7)
+        manual_sector = st.session_state.get("case_manual_sector", st.session_state.get("manual_sector", list(NIC_SECTOR_TAXONOMY.values())[0]))
+        manual_vintage = st.session_state.get("case_manual_vintage", st.session_state.get("manual_vintage", 7))
         cin_parsed_data = {
             "cin": "UNREGISTERED_MSME",
             "listing_status": "Unlisted",
             "macro_sector": manual_sector,
-            "business_vintage_years": manual_vintage,
-            "low_vintage_risk_flag": manual_vintage < 3,
+            "business_vintage_years": int(manual_vintage),
+            "low_vintage_risk_flag": int(manual_vintage) < 3,
             "entity_code": "PROPRIETORSHIP",
             "state_name": "Pan-India",
         }

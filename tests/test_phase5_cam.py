@@ -11,7 +11,12 @@ sys.path.insert(0, str(BASE_DIR))
 from core.policy import Verdict
 from core.data_models import CreditCase, BankExtraction, GSTExtraction, ITRExtraction
 from core.scorer import score_credit_case, ScoreResult
-from core.cam_generator import generate_cam_markdown, CamGenerationError
+from core.cam_generator import (
+    generate_cam_markdown,
+    generate_cam_docx,
+    generate_cam_pdf,
+    CamGenerationError,
+)
 from core.formatting import format_inr
 
 
@@ -150,3 +155,54 @@ def test_financials_hash_invalidation():
     hash2 = hashlib.sha256(json.dumps(f2, sort_keys=True).encode()).hexdigest()
 
     assert hash1 != hash2, "Hash must change when financials are modified"
+
+
+def test_cam_docx_export():
+    """Verify Word (.docx) export generates valid bytes, sanitizes PII, and blocks on incomplete files."""
+    raw_pan = "AAACA1234B"
+    case = create_test_credit_case(raw_pan=raw_pan)
+    score_res = score_credit_case(case)
+    cin_info = {"cin": "U29253DL2018PTC334120", "macro_sector": "Manufacturing"}
+
+    docx_bytes = generate_cam_docx(
+        credit_case=case,
+        score_result=score_res,
+        cin_parsed_data=cin_info,
+        app_id="APP-DOCX-001",
+        pan=raw_pan,
+    )
+    assert isinstance(docx_bytes, bytes)
+    assert len(docx_bytes) > 1000
+
+    # Test blocking on INSUFFICIENT_DATA
+    case_bad = create_test_credit_case()
+    case_bad.itr_data.profit_after_tax = None
+    res_bad = score_credit_case(case_bad)
+    with pytest.raises(CamGenerationError):
+        generate_cam_docx(case_bad, res_bad)
+
+
+def test_cam_pdf_export():
+    """Verify PDF export generates valid bytes, sanitizes PII, and blocks on incomplete files."""
+    raw_pan = "AAACA1234B"
+    case = create_test_credit_case(raw_pan=raw_pan)
+    score_res = score_credit_case(case)
+    cin_info = {"cin": "U29253DL2018PTC334120", "macro_sector": "Manufacturing"}
+
+    pdf_bytes = generate_cam_pdf(
+        credit_case=case,
+        score_result=score_res,
+        cin_parsed_data=cin_info,
+        app_id="APP-PDF-001",
+        pan=raw_pan,
+    )
+    assert isinstance(pdf_bytes, bytes)
+    assert len(pdf_bytes) > 1000
+    assert pdf_bytes.startswith(b"%PDF")
+
+    # Test blocking on INSUFFICIENT_DATA
+    case_bad = create_test_credit_case()
+    case_bad.itr_data.profit_after_tax = None
+    res_bad = score_credit_case(case_bad)
+    with pytest.raises(CamGenerationError):
+        generate_cam_pdf(case_bad, res_bad)

@@ -594,9 +594,10 @@ if res is not None:
                                         render_callout("Minimum 10 characters required for dismissal justification.", title="Validation Error", variant="error")
 
         # --------------------------------------------------------------------
-        # 7. OFFICER FIELD NOTES & QUALITATIVE LOGBOOK
+        # 7. OFFICER FIELD NOTES & QUALITATIVE DOSSIER
         # --------------------------------------------------------------------
-        with st.expander(":material/rate_review: Credit Committee Qualitative Field Logbook", expanded=bool(st.session_state.officer_notes)):
+        with st.container(border=True):
+            st.markdown("#### :material/rate_review: Credit Committee Qualitative Field Dossier")
             st.caption("Record on-site inspection observations, promoter interviews, and qualitative due diligence.")
 
             st.markdown("<div style='font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; margin-bottom: 4px;'>Quick Observation Presets:</div>", unsafe_allow_html=True)
@@ -655,7 +656,8 @@ if res is not None:
         # --------------------------------------------------------------------
         # 8. EXECUTIVE VETO (CREDIT COMMITTEE OVERRIDE)
         # --------------------------------------------------------------------
-        with st.expander(":material/gavel: Executive Veto (Credit Committee Override)", expanded=bool(st.session_state.executive_override and st.session_state.executive_override.get("override_active"))):
+        with st.container(border=True):
+            st.markdown("#### :material/gavel: Credit Committee Quorum Governance Shield")
             st.caption("Under bank governance, credit committee officers may override the algorithmic verdict, but MUST provide written justification.")
             gov_note = """<div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; font-size: 11px; color: #64748B; line-height: 1.4;">
                 <strong>Governance Rule:</strong> Overrides are prohibited if an admitted SEVERE adverse finding (e.g. NCLT) is confirmed. Written justification (minimum 20 characters) is permanently chained into the session audit log.
