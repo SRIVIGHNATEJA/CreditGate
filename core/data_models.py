@@ -19,7 +19,7 @@ def coerce_currency(v: Any) -> Decimal:
     if isinstance(v, (int, float)):
         return Decimal(str(v))
     if isinstance(v, str):
-        v_clean = v.replace(",", "").replace("₹", "").replace("$", "").strip()
+        v_clean = v.replace(",", "").replace("₹", "").replace("$", "").replace("−", "-").strip()
         v_lower = v_clean.lower()
         
         is_negative = False
@@ -33,6 +33,12 @@ def coerce_currency(v: Any) -> Decimal:
             v_lower = v_lower[3:].strip()
         elif v_lower.startswith("rs"):
             v_lower = v_lower[2:].strip()
+
+        if v_lower.startswith("-"):
+            is_negative = not is_negative
+            v_lower = v_lower[1:].strip()
+
+        v_lower = v_lower.rstrip(",").strip()
             
         try:
             m_cr = CRORE_SUFFIX_RE.match(v_lower)

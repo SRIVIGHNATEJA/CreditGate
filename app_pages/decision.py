@@ -266,11 +266,14 @@ if res is not None:
         # --------------------------------------------------------------------
         k1, k2, k3, k4 = st.columns(4)
         with k1:
+            dscr_hurdle = Decimal("1.20")
+            dscr_diff = res.dscr - dscr_hurdle
+            dscr_sign = "+" if dscr_diff >= Decimal("0") else ""
             render_kpi_card(
                 "Operating DSCR",
                 f"{res.dscr:.2f}x",
-                delta="Hurdle: 1.20x",
-                delta_color="normal" if res.dscr >= Decimal("1.20") else "inverse",
+                delta=f"{dscr_sign}{dscr_diff:.2f}x vs 1.20x hurdle",
+                delta_color="normal" if res.dscr >= dscr_hurdle else "inverse",
             )
 
         with k2:
@@ -339,13 +342,16 @@ if res is not None:
         ]
         c_colors = ['#0F766E' if s >= 40.0 else '#B91C1C' for s in c_scores]
 
+        weights_map = {"CONDITIONS": "15%", "COLLATERAL": "15%", "CAPITAL": "20%", "CAPACITY": "30%", "CHARACTER": "20%"}
+        bar_annotations = [f"{s:.1f} pts ({weights_map.get(l.upper(), '')})" for s, l in zip(c_scores, c_labels)]
+
         fig_h = go.Figure()
         fig_h.add_trace(go.Bar(
             x=c_scores,
             y=c_labels,
             orientation='h',
             marker=dict(color=c_colors),
-            text=[f"{s:.1f} pts" for s in c_scores],
+            text=bar_annotations,
             textposition='auto',
             name="Pillar Score",
         ))
@@ -399,8 +405,10 @@ if res is not None:
         fig_r.add_trace(go.Scatterpolar(
             r=[40, 40, 40, 40, 40, 40],
             theta=r_categories + [r_categories[0]],
-            name='Floor (40.0)',
+            fill='toself',
+            name='Danger Floor (< 40.0)',
             line=dict(color='#B91C1C', width=1.5, dash='dash'),
+            fillcolor='rgba(185, 28, 28, 0.08)',
         ))
         fig_r.update_layout(
             paper_bgcolor="rgba(0,0,0,0)",
@@ -446,6 +454,7 @@ if res is not None:
                 }
                 for d in res.deductions
             ]
+            deduct_records.sort(key=lambda x: float(x["Deduction"].replace("-", "").replace(" pts", "")), reverse=True)
             st.dataframe(pd.DataFrame(deduct_records), width="stretch", hide_index=True)
         else:
             render_callout("Applicant scored 100.0/100 across all evaluated parameters with zero deductions.", title="Zero Deductions", variant="success")
@@ -559,6 +568,7 @@ if res is not None:
                         if f.review_status == ReviewStatus.UNREVIEWED:
                             st.markdown("##### Officer Legal Determination (Inline Action)")
                             note_val = st.text_input("Order Citation / Dismissal Reason (Required)", key=f"inline_note_{f.id}", placeholder="e.g. NCLT Order CP(IB)/102/2026 or Homonym entity collision")
+                            st.caption(f"Citation/Reason Length: {len(note_val.strip())}/10 characters minimum")
                             c_act1, c_act2 = st.columns(2)
                             with c_act1:
                                 if st.button("Confirm Finding", key=f"btn_inline_conf_{f.id}", type="primary", width="stretch"):
@@ -603,19 +613,19 @@ if res is not None:
             st.markdown("<div style='font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; margin-bottom: 4px;'>Quick Observation Presets:</div>", unsafe_allow_html=True)
             col_pr1, col_pr2, col_pr3, col_pr4 = st.columns(4)
             with col_pr1:
-                if st.button("Plant Inspection", key="btn_pr_plant", width="stretch"):
+                if st.button(":material/factory: Plant Inspection", key="btn_pr_plant", width="stretch"):
                     st.session_state.txt_field_note = "Plant inspection verified: Machinery in operational condition at 85% capacity utilization. Physical stock matches GSTR-3B filings."
                     st.rerun()
             with col_pr2:
-                if st.button("Promoter Diligence", key="btn_pr_promoter", width="stretch"):
+                if st.button(":material/person_search: Promoter Diligence", key="btn_pr_promoter", width="stretch"):
                     st.session_state.txt_field_note = "Promoter interview concluded: Clear market reputation, satisfactory vintage in the sector, and clean track record with local suppliers."
                     st.rerun()
             with col_pr3:
-                if st.button("Working Capital", key="btn_pr_wc", width="stretch"):
+                if st.button(":material/account_balance_wallet: Working Capital", key="btn_pr_wc", width="stretch"):
                     st.session_state.txt_field_note = "Working capital verification: Receivables turnover matches standard 45-day commercial terms with low single-debtor concentration."
                     st.rerun()
             with col_pr4:
-                if st.button("Tax & Filings", key="btn_pr_tax", width="stretch"):
+                if st.button(":material/receipt_long: Tax & Filings", key="btn_pr_tax", width="stretch"):
                     st.session_state.txt_field_note = "Tax governance check: GSTR-3B monthly filings and advance tax payments match annual audited financials without statutory demands."
                     st.rerun()
 
@@ -640,6 +650,12 @@ if res is not None:
 
             if st.session_state.officer_notes:
                 st.markdown("##### Logged Field Observations")
+                col_h1, col_h2 = st.columns([4, 1])
+                with col_h2:
+                    if st.button(":material/undo: Clear Last", key="btn_clear_last_note", width="stretch"):
+                        st.session_state.officer_notes.pop()
+                        st.session_state.cam_markdown = None
+                        st.rerun()
                 for on in st.session_state.officer_notes:
                     c_tag = status_pill(on.get("affected_c", "GENERAL"), variant="info")
                     clean_ts = html.escape(str(on.get("timestamp", "")))
@@ -663,6 +679,13 @@ if res is not None:
                 <strong>Governance Rule:</strong> Overrides are prohibited if an admitted SEVERE adverse finding (e.g. NCLT) is confirmed. Written justification (minimum 20 characters) is permanently chained into the session audit log.
             </div>"""
             st.markdown("\n".join(line.strip() for line in gov_note.splitlines() if line.strip()), unsafe_allow_html=True)
+
+            if has_confirmed_severe:
+                render_callout(
+                    "Governance Shield Lockout Active: A confirmed SEVERE adverse finding (e.g. Admitted NCLT Insolvency) permanently bars discretionary overrides under credit committee regulations.",
+                    title="Governance Lockout Enforced",
+                    variant="error",
+                )
 
             veto_active = st.toggle("Enable Executive Veto", value=bool(st.session_state.executive_override and st.session_state.executive_override.get("override_active")), key="tgl_veto_active")
             if not veto_active and st.session_state.executive_override and st.session_state.executive_override.get("override_active"):
@@ -698,6 +721,7 @@ if res is not None:
                     placeholder="State exact credit committee rationale for overriding the system verdict...",
                     key="txt_veto_just",
                 )
+                st.caption(f"Justification Length: {len(veto_justification.strip())}/20 characters minimum")
                 if st.button("Submit Executive Veto", key="btn_submit_veto"):
                     if has_confirmed_severe and veto_verdict != "REJECT":
                         render_callout("Policy rule: a confirmed SEVERE finding cannot be overridden. Verdict stays REJECT.", title="Governance Violation", variant="error")

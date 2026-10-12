@@ -35,11 +35,13 @@ g_col1, g_col2, g_col3 = st.columns(3)
 
 with g_col1:
     with st.container(border=True):
-        st.markdown('<div style="height: 3px; background: #15803D; border-radius: 2px; margin-bottom: 6px;"></div>', unsafe_allow_html=True)
+        border_c1 = "border: 2px solid #15803D;" if is_c1 else ""
+        st.markdown(f'<div style="height: 4px; background: #15803D; border-radius: 2px; margin-bottom: 6px; {border_c1}"></div>', unsafe_allow_html=True)
         st.markdown('<div style="font-size: 10px; font-weight: 700; color: #15803D; letter-spacing: 0.05em; text-transform: uppercase;">Archetype: Tier-1 Prime MSME</div>', unsafe_allow_html=True)
         c1_chip = f" &nbsp; {status_pill('ACTIVE', variant='info')}" if is_c1 else ""
         st.markdown(f"**1. Prime MSME**{c1_chip}", unsafe_allow_html=True)
         st.markdown(f"**Apex Synthetic Holdings (Demo)** &nbsp; {status_pill('APPROVE', variant='approve')}", unsafe_allow_html=True)
+        st.markdown("<div style='font-size: 11px; color: #0F766E; font-weight: 600; margin: 4px 0;'>DSCR: 1.62x &nbsp;•&nbsp; Bounces: 0 &nbsp;•&nbsp; Gap: 5.2%</div>", unsafe_allow_html=True)
         st.caption("Deciding Signal: Clean banking, 0 mandate bounces, DSCR 1.62x, balanced ledger.")
         st.button(
             "Selected (Active)" if is_c1 else "Open Case",
@@ -52,11 +54,13 @@ with g_col1:
 
 with g_col2:
     with st.container(border=True):
-        st.markdown('<div style="height: 3px; background: #B91C1C; border-radius: 2px; margin-bottom: 6px;"></div>', unsafe_allow_html=True)
+        border_c2 = "border: 2px solid #B91C1C;" if is_c2 else ""
+        st.markdown(f'<div style="height: 4px; background: #B91C1C; border-radius: 2px; margin-bottom: 6px; {border_c2}"></div>', unsafe_allow_html=True)
         st.markdown('<div style="font-size: 10px; font-weight: 700; color: #B91C1C; letter-spacing: 0.05em; text-transform: uppercase;">Archetype: Distressed Logistics</div>', unsafe_allow_html=True)
         c2_chip = f" &nbsp; {status_pill('ACTIVE', variant='info')}" if is_c2 else ""
         st.markdown(f"**2. Distressed**{c2_chip}", unsafe_allow_html=True)
         st.markdown(f"**Kaveri Fictitious Freight (Demo)** &nbsp; {status_pill('REJECT', variant='reject')}", unsafe_allow_html=True)
+        st.markdown("<div style='font-size: 11px; color: #B91C1C; font-weight: 600; margin: 4px 0;'>DSCR: 0.82x &nbsp;•&nbsp; Bounces: 5 &nbsp;•&nbsp; Gap: 12.1%</div>", unsafe_allow_html=True)
         st.caption("Deciding Signal: 5 mandate bounces enforce hard policy knockout (BOUNCE_KNOCKOUT).")
         st.button(
             "Selected (Active)" if is_c2 else "Open Case",
@@ -69,11 +73,13 @@ with g_col2:
 
 with g_col3:
     with st.container(border=True):
-        st.markdown('<div style="height: 3px; background: #B45309; border-radius: 2px; margin-bottom: 6px;"></div>', unsafe_allow_html=True)
+        border_c3 = "border: 2px solid #B45309;" if is_c3 else ""
+        st.markdown(f'<div style="height: 4px; background: #B45309; border-radius: 2px; margin-bottom: 6px; {border_c3}"></div>', unsafe_allow_html=True)
         st.markdown('<div style="font-size: 10px; font-weight: 700; color: #B45309; letter-spacing: 0.05em; text-transform: uppercase;">Archetype: High-Turnover Trader</div>', unsafe_allow_html=True)
         c3_chip = f" &nbsp; {status_pill('ACTIVE', variant='info')}" if is_c3 else ""
         st.markdown(f"**3. Mismatch Trap**{c3_chip}", unsafe_allow_html=True)
         st.markdown(f"**Bharat Mock Steels & Infra (Demo)** &nbsp; {status_pill('CONDITIONAL', variant='conditional')}", unsafe_allow_html=True)
+        st.markdown("<div style='font-size: 11px; color: #B45309; font-weight: 600; margin: 4px 0;'>DSCR: 1.15x &nbsp;•&nbsp; Bounces: 1 &nbsp;•&nbsp; Gap: 24.5%</div>", unsafe_allow_html=True)
         st.caption("Deciding Signal: ₹14.5 Cr turnover vs thin ₹18L PAT triggers WEAKEST_LINK_CAP (< 40.0).")
         st.button(
             "Selected (Active)" if is_c3 else "Open Case",
@@ -168,6 +174,7 @@ with col_borrower:
                     render_callout("Business vintage < 3 years indicates elevated early-stage default risk.", title="Vintage Warning", variant="warning")
         else:
             render_callout("Unregistered MSME / Proprietorship mode active.", title="Entity Mode", variant="info")
+            render_callout("Tip: For Sole Proprietorships, 4th character of PAN is 'P' (Individual) or 'F' (Partnership Firm).", title="MSME PAN Guidance", variant="info")
             st.selectbox("Industry Macro Sector", list(NIC_SECTOR_TAXONOMY.values()), index=0, key="case_manual_sector")
             st.number_input("Business Vintage (Years)", min_value=1, max_value=60, value=7, key="case_manual_vintage")
 
@@ -229,10 +236,49 @@ with col_facility:
         st.markdown("#### :material/payments: Facility Terms")
         
         # Bank Policy Pricing Context
-        policy_spread = "+3.75%" if is_c1 else ("+7.25%" if is_c2 else "+5.00%")
+        is_large_ticket = float(st.session_state.facility_loan_amount) > 10000000.0
+        base_spread = 3.75 if is_c1 else (7.25 if is_c2 else 5.00)
+        spread_tier_add = 0.50 if is_large_ticket else 0.0
+        effective_spread = base_spread + spread_tier_add
         policy_tier_name = "Tier-1 Prime" if is_c1 else ("Tier-3 Stressed" if is_c2 else "Tier-2 Moderate")
-        pricing_badge = f'<div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid #0F766E; border-radius: 6px; padding: 6px 12px; margin-bottom: 12px; font-size: 12px; color: #1E293B;"><strong>Bank Policy Pricing:</strong> RBI Repo (6.50%) + {policy_spread} Spread ({policy_tier_name})</div>'
+        if is_large_ticket:
+            policy_tier_name += " (Large Ticket +0.50%)"
+        benchmark_rate = 6.50 + effective_spread
+        curr_rate = float(st.session_state.facility_interest_rate)
+        delta_rate = curr_rate - benchmark_rate
+        if abs(delta_rate) < 0.01:
+            concession_chip = status_pill("Policy Standard", variant="approve")
+        elif delta_rate < 0:
+            concession_chip = status_pill(f"Concession: {delta_rate:.2f}%", variant="info")
+        else:
+            concession_chip = status_pill(f"Risk Surcharge: +{delta_rate:.2f}%", variant="conditional")
+
+        pricing_badge = f'<div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid #0F766E; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; font-size: 12px; color: #1E293B; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;"><div><strong>Bank Policy Pricing:</strong> RBI Repo (6.50%) + {effective_spread:.2f}% ({policy_tier_name}) = <strong>{benchmark_rate:.2f}% p.a.</strong></div><div>{concession_chip}</div></div>'
         st.markdown(pricing_badge, unsafe_allow_html=True)
+
+        # Quick Facility Amount Presets
+        st.markdown("<div style='font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; margin-bottom: 4px;'>Loan Amount Presets:</div>", unsafe_allow_html=True)
+        col_ps1, col_ps2, col_ps3, col_ps4 = st.columns(4)
+        with col_ps1:
+            if st.button("₹25L", key="btn_pre_25l", width="stretch", help="Set facility to ₹25 Lakhs"):
+                st.session_state.facility_loan_amount = 2500000.0
+                st.session_state.loan_amount = 2500000.0
+                st.rerun()
+        with col_ps2:
+            if st.button("₹50L", key="btn_pre_50l", width="stretch", help="Set facility to ₹50 Lakhs"):
+                st.session_state.facility_loan_amount = 5000000.0
+                st.session_state.loan_amount = 5000000.0
+                st.rerun()
+        with col_ps3:
+            if st.button("₹75L", key="btn_pre_75l", width="stretch", help="Set facility to ₹75 Lakhs"):
+                st.session_state.facility_loan_amount = 7500000.0
+                st.session_state.loan_amount = 7500000.0
+                st.rerun()
+        with col_ps4:
+            if st.button("₹1.0Cr", key="btn_pre_1cr", width="stretch", help="Set facility to ₹1.00 Crore"):
+                st.session_state.facility_loan_amount = 10000000.0
+                st.session_state.loan_amount = 10000000.0
+                st.rerun()
 
         with st.form(key="case_facility_form"):
             form_loan = st.number_input(
@@ -250,7 +296,7 @@ with col_facility:
                 value=int(st.session_state.facility_tenure_months),
                 step=6,
                 key="form_tenure_months",
-                help="Applicant requested repayment amortization horizon."
+                help="Applicant requested repayment amortization horizon. Milestones: 12M (1 Yr), 36M (3 Yrs), 60M (5 Yrs), 84M (7 Yrs)."
             )
             form_rate = st.slider(
                 "Policy Lending Rate (%)",
@@ -299,6 +345,29 @@ with col_facility:
             subtext="Banking Annuity Formula",
             tooltip="P*r*(1+r)^n / ((1+r)^n - 1)",
         )
+
+        req_l = float(st.session_state.facility_loan_amount)
+        pled_c = float(st.session_state.facility_collateral_val)
+        cov_pct = (pled_c / req_l * 100.0) if req_l > 0 else 0.0
+        cov_variant = "approve" if cov_pct >= 100.0 else ("conditional" if cov_pct >= 50.0 else "neutral")
+        cov_pill = status_pill(f"{cov_pct:.1f}% Covered", variant=cov_variant)
+        st.markdown(f"<div style='font-size: 12px; color: #475569; margin: 4px 0 8px 0;'><strong>Collateral Coverage Ratio:</strong> {cov_pill} &nbsp; ({format_inr(pled_c)} / {format_inr(req_l)})</div>", unsafe_allow_html=True)
+        if st.session_state.facility_cgtmse_covered:
+            st.caption(":material/verified_user: CGTMSE Trust Cover Active: Credit guarantee covers eligible debt. Annual fee approx 0.75%–1.00% p.a.")
+
+        if st.button(":material/restart_alt: Reset to Policy Standard", key="btn_reset_policy_terms", width="stretch"):
+            st.session_state.facility_loan_amount = 5000000.0
+            st.session_state.facility_tenure_months = 36
+            st.session_state.facility_interest_rate = 11.5
+            st.session_state.facility_collateral_val = 2500000.0
+            st.session_state.facility_cgtmse_covered = False
+            st.session_state.loan_amount = 5000000.0
+            st.session_state.tenure_months = 36
+            st.session_state.interest_rate = 11.5
+            st.session_state.collateral_value = 2500000.0
+            st.session_state.cgtmse_covered = False
+            st.rerun()
+
         st.caption(":material/info: Click **Apply Facility Terms** to persist parameter changes and recalculate EMI.")
 
 # ----------------------------------------------------------------------------

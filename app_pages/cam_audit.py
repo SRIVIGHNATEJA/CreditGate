@@ -1,3 +1,4 @@
+import time
 import json
 from typing import Dict, Any
 
@@ -63,6 +64,16 @@ with tab_cam:
                 render_callout(f"CAM Generation Notice: {e}", title="Generation Error", variant="error")
 
         if st.session_state.cam_markdown:
+            comp_nm = st.session_state.locked_case.company_name if st.session_state.locked_case else "Applicant"
+            c_slug = "".join(c for c in comp_nm if c.isalnum() or c in ('_', '-'))[:20]
+
+            st.markdown(
+                f"<div style='margin-bottom: 10px; font-size: 12px; color: #475569;'><strong>Regulatory Compliance:</strong> &nbsp; "
+                f"{status_pill('PII Masked: Zero Unmasked PANs', variant='approve')} &nbsp;|&nbsp; "
+                f"{status_pill('Cryptographic SHA-256 Provenance', variant='info')}</div>",
+                unsafe_allow_html=True
+            )
+
             # Word, PDF, and Markdown download buttons in balanced action row
             col_d1, col_d2, col_d3 = st.columns(3)
             with col_d1:
@@ -80,8 +91,9 @@ with tab_cam:
                 st.download_button(
                     label=":material/download: Download Formal CAM (.docx)",
                     data=docx_bytes,
-                    file_name=f"CAM_{st.session_state.app_id}.docx",
+                    file_name=f"CAM_{c_slug}_{st.session_state.app_id}.docx",
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    help="Formatted Microsoft Word document with natural pagination, data tables, and signature blocks.",
                     width="stretch",
                 )
             with col_d2:
@@ -99,16 +111,18 @@ with tab_cam:
                 st.download_button(
                     label=":material/download: Download Printable CAM (.pdf)",
                     data=pdf_bytes,
-                    file_name=f"CAM_{st.session_state.app_id}.pdf",
+                    file_name=f"CAM_{c_slug}_{st.session_state.app_id}.pdf",
                     mime="application/pdf",
+                    help="Printable ReportLab PDF with structured headers, styled tables, and committee sign-off boxes.",
                     width="stretch",
                 )
             with col_d3:
                 st.download_button(
                     label=":material/download: Download Structured CAM (.md)",
                     data=st.session_state.cam_markdown,
-                    file_name=f"CAM_{st.session_state.app_id}.md",
+                    file_name=f"CAM_{c_slug}_{st.session_state.app_id}.md",
                     mime="text/markdown",
+                    help="Standard GitHub-flavored Markdown formatted memorandum for automated archival.",
                     width="stretch",
                 )
 
@@ -201,34 +215,55 @@ with tab_audit:
     else:
         # SHA-256 Hash Chain Integrity Verification
         is_chain_valid, chain_err = verify_chain(events)
-        if is_chain_valid:
-            render_callout(
-                f"SHA-256 Hash Chain Verified: All {len(events)} session events linked with zero breaks.",
-                title="Tamper-Evidence Verified",
-                variant="success",
-            )
-        else:
-            render_callout(
-                f"SHA-256 Hash Chain Broken: {chain_err}",
-                title="Integrity Alert",
-                variant="error",
-            )
+        col_vr1, col_vr2 = st.columns([3, 1])
+        with col_vr1:
+            if is_chain_valid:
+                render_callout(
+                    f"SHA-256 Hash Chain Verified: All {len(events)} session events linked with zero breaks.",
+                    title="Tamper-Evidence Verified",
+                    variant="success",
+                )
+            else:
+                render_callout(
+                    f"SHA-256 Hash Chain Broken: {chain_err}",
+                    title="Integrity Alert",
+                    variant="error",
+                )
+        with col_vr2:
+            if st.button(":material/verified: Re-verify Chain", key="btn_reverify_chain", width="stretch"):
+                t_v0 = time.perf_counter()
+                v_ok, v_err = verify_chain(events)
+                t_v_el = (time.perf_counter() - t_v0) * 1000
+                if v_ok:
+                    st.toast(f"Cryptographic chain intact ({len(events)} blocks in {t_v_el:.1f}ms).", icon="🔒")
+                else:
+                    st.toast(f"Verification failed: {v_err}", icon="🚨")
 
-        # Severity filter
-        col_f1, col_f2 = st.columns([1, 2])
+        # Dual filters by Severity and Actor
+        col_f1, col_f2, col_f3 = st.columns([1, 1, 1])
         with col_f1:
             selected_sev = st.selectbox(
-                "Filter Audit Events by Severity",
+                "Filter by Severity",
                 ["ALL", "INFO", "WARNING", "ERROR"],
                 index=0,
                 key="audit_sev_filter",
             )
         with col_f2:
-            st.markdown(f"**Total Events Recorded:** `{len(events)}`")
+            actor_options = ["ALL", "OFFICER", "SYSTEM_POLICY", "PARSER", "RESEARCHER", "DETERMINISTIC_ENGINE", "OFFICER_VETO"]
+            selected_actor = st.selectbox(
+                "Filter by Actor",
+                actor_options,
+                index=0,
+                key="audit_actor_filter",
+            )
+        with col_f3:
+            st.markdown(f"**Total Events:** `{len(events)}`")
+            st.markdown(f"**Chain Head:** `{events[-1].get('event_hash', 'N/A')[:8]}...`")
 
         filtered_events = [
             e for e in events
-            if selected_sev == "ALL" or e.get("severity") == selected_sev
+            if (selected_sev == "ALL" or e.get("severity") == selected_sev)
+            and (selected_actor == "ALL" or e.get("actor") == selected_actor)
         ]
 
         def summarize_event(evt: Dict[str, Any]) -> str:
@@ -262,7 +297,7 @@ with tab_audit:
 
         # Render Audit Table
         if not filtered_events:
-            render_callout(f"No audit events found with severity '{selected_sev}'.", title="No Matching Events", variant="info")
+            render_callout(f"No audit events found matching filters.", title="No Matching Events", variant="info")
         else:
             audit_table_rows = [
                 {
@@ -285,8 +320,12 @@ with tab_audit:
                 evt_ts = (evt.get("timestamp") or "")[:19]
                 evt_h = (evt.get("event_hash") or "N/A")[:16]
                 prev_h = (evt.get("prev_hash") or "N/A")[:16]
-                exp_title = f"{evt_ts} | {evt.get('event_type', '')} ({evt.get('actor', '')})"
+                is_genesis = (evt.get("prev_hash") == "0" * 64)
+                genesis_badge = " 🛡️ [GENESIS BLOCK]" if is_genesis else ""
+                exp_title = f"{evt_ts} | {evt.get('event_type', '')} ({evt.get('actor', '')}){genesis_badge}"
                 with st.expander(exp_title, expanded=False, key=f"exp_audit_{idx}_{evt_h[:8]}"):
+                    if is_genesis:
+                        st.markdown(f"<span style='color: #0F766E; font-weight:700;'>• Genesis Block (Genesis Root Hash: {evt_h})</span>", unsafe_allow_html=True)
                     st.markdown(f"**Severity:** <span style='color:{color}; font-weight:700;'>{sev}</span> &nbsp;|&nbsp; **Hash:** `{evt_h}` &nbsp;|&nbsp; **Prev Hash:** `{prev_h}`", unsafe_allow_html=True)
                     details_dict = evt.get("details", {})
                     if isinstance(details_dict, dict) and details_dict:

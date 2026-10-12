@@ -19,3 +19,7 @@ data/*
 !data/synthetic/
 !data/synthetic/**
 *.docx
+
+# Editor metadata
+.agents/
+.claude/

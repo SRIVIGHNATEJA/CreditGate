@@ -174,6 +174,23 @@ def test_cam_docx_export():
     assert isinstance(docx_bytes, bytes)
     assert len(docx_bytes) > 1000
 
+    # Test with executive override
+    veto = {
+        "override_active": True,
+        "override_verdict": "CONDITIONAL",
+        "officer_name": "Committee Head",
+        "justification_text": "Strong collateral justification",
+        "timestamp": "2026-10-07T12:00:00Z"
+    }
+    docx_veto = generate_cam_docx(
+        credit_case=case,
+        score_result=score_res,
+        executive_override=veto,
+        app_id="APP-DOCX-002"
+    )
+    assert isinstance(docx_veto, bytes)
+    assert len(docx_veto) > len(docx_bytes)
+
     # Test blocking on INSUFFICIENT_DATA
     case_bad = create_test_credit_case()
     case_bad.itr_data.profit_after_tax = None
@@ -199,6 +216,23 @@ def test_cam_pdf_export():
     assert isinstance(pdf_bytes, bytes)
     assert len(pdf_bytes) > 1000
     assert pdf_bytes.startswith(b"%PDF")
+
+    # Test with executive override
+    veto = {
+        "override_active": True,
+        "override_verdict": "CONDITIONAL",
+        "officer_name": "Committee Head",
+        "justification_text": "Strong collateral justification",
+        "timestamp": "2026-10-07T12:00:00Z"
+    }
+    pdf_veto = generate_cam_pdf(
+        credit_case=case,
+        score_result=score_res,
+        executive_override=veto,
+        app_id="APP-PDF-002"
+    )
+    assert isinstance(pdf_veto, bytes)
+    assert pdf_veto.startswith(b"%PDF")
 
     # Test blocking on INSUFFICIENT_DATA
     case_bad = create_test_credit_case()

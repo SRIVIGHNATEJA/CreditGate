@@ -365,8 +365,30 @@ def generate_cam_docx(
         t_cs.cell(idx, 1).text = wt
         t_cs.cell(idx, 2).text = sc
 
-    # 4. Sign-off Quorum
-    doc.add_heading("4. COMMITTEE QUORUM AUTHORIZATION", level=1)
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    for col_idx in range(3):
+        header_cell = t_cs.cell(0, col_idx)
+        shading = parse_xml(r'<w:shd {} w:fill="0B1F3A"/>'.format(nsdecls('w')))
+        header_cell._tc.get_or_add_tcPr().append(shading)
+        for p in header_cell.paragraphs:
+            for r in p.runs:
+                r.font.bold = True
+                r.font.color.rgb = docx.shared.RGBColor(255, 255, 255)
+
+    # 4. Executive Override (if active)
+    if executive_override and executive_override.get("override_active"):
+        doc.add_heading("4. COMMITTEE EXECUTIVE OVERRIDE / VETO", level=1)
+        p_veto = doc.add_paragraph()
+        p_veto.add_run(f"Original System Verdict: {score_result.final_verdict.name}\n")
+        p_veto.add_run(f"Executive Override Verdict: {executive_override.get('override_verdict', 'N/A')}\n").bold = True
+        p_veto.add_run(f"Authorizing Officer: {executive_override.get('officer_name', 'Credit Risk Committee')}\n")
+        p_veto.add_run(f"Mandatory Written Justification: \"{executive_override.get('justification_text', '')}\"\n")
+        p_veto.add_run(f"Recorded Timestamp: {executive_override.get('timestamp', '')}\n")
+
+    # 5. Sign-off Quorum
+    doc.add_heading("5. COMMITTEE QUORUM AUTHORIZATION", level=1)
     t_sign = doc.add_table(rows=2, cols=3)
     t_sign.style = "Table Grid"
     t_sign.cell(0, 0).text = f"1. Appraising Officer\n\n___________________\nName: R. K. Verma\nDate: {now_str[:11]}"
@@ -472,7 +494,28 @@ def generate_cam_pdf(
             ('BOTTOMPADDING', (0,0), (-1,-1), 3),
         ]),
         Spacer(1, 10),
-        Paragraph("<b>4. COMMITTEE QUORUM AUTHORIZATION SIGN-OFF</b>", h2_style),
+    ]
+
+    if executive_override and executive_override.get("override_active"):
+        story.extend([
+            Paragraph("<b>4. COMMITTEE EXECUTIVE OVERRIDE / VETO</b>", h2_style),
+            Table([
+                [Paragraph("<b>Original System Verdict</b>", body_style), Paragraph(str(score_result.final_verdict.name), body_style)],
+                [Paragraph("<b>Override Verdict</b>", bold_style), Paragraph(str(executive_override.get('override_verdict', 'N/A')), bold_style)],
+                [Paragraph("<b>Authorizing Officer</b>", body_style), Paragraph(str(executive_override.get('officer_name', 'Credit Risk Committee')), body_style)],
+                [Paragraph("<b>Mandatory Justification</b>", body_style), Paragraph(str(executive_override.get('justification_text', '')), body_style)],
+                [Paragraph("<b>Recorded Timestamp</b>", body_style), Paragraph(str(executive_override.get('timestamp', '')), body_style)],
+            ], colWidths=[180, 360], style=[
+                ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#FEF2F2')),
+                ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#F87171')),
+                ('TOPPADDING', (0,0), (-1,-1), 3),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+            ]),
+            Spacer(1, 10),
+        ])
+
+    story.extend([
+        Paragraph("<b>5. COMMITTEE QUORUM AUTHORIZATION SIGN-OFF</b>" if (executive_override and executive_override.get("override_active")) else "<b>4. COMMITTEE QUORUM AUTHORIZATION SIGN-OFF</b>", h2_style),
         Table([
             [
                 Paragraph(f"<b>1. Appraising Officer</b><br/><br/><br/>Name: R. K. Verma<br/>Date: {now_str[:11]}", body_style),
@@ -485,8 +528,19 @@ def generate_cam_pdf(
             ('TOPPADDING', (0,0), (-1,-1), 6),
             ('BOTTOMPADDING', (0,0), (-1,-1), 6),
         ])
-    ]
+    ])
 
-    pdf.build(story)
+    def _draw_header_footer(canvas, d):
+        canvas.saveState()
+        canvas.setFont('Helvetica-Bold', 7)
+        canvas.setFillColor(colors.HexColor('#64748B'))
+        canvas.drawString(36, 11 * 72 - 24, "CREDITGATE RISK ASSESSMENT DIVISION | CONFIDENTIAL CREDIT APPRAISAL MEMORANDUM")
+        canvas.drawRightString(8.5 * 72 - 36, 11 * 72 - 24, f"REF: {app_id}")
+        canvas.setFont('Helvetica', 7)
+        canvas.drawString(36, 20, "Deterministic Underwriting Engine | Strictly Confidential")
+        canvas.drawRightString(8.5 * 72 - 36, 20, f"Page {d.page} | Cryptographically Verified Hash Chain")
+        canvas.restoreState()
+
+    pdf.build(story, onFirstPage=_draw_header_footer, onLaterPages=_draw_header_footer)
     return buf.getvalue()
 

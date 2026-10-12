@@ -38,6 +38,11 @@ def test_currency_parsing_crore_lakh_variations():
     assert coerce_currency("10,00,000") == Decimal("1000000.00")
     assert coerce_currency("(50,000)") == Decimal("-50000.00")
     assert coerce_currency("(1.5 cr)") == Decimal("-15000000.00")
+    assert coerce_currency("-₹50,000") == Decimal("-50000.00")
+    assert coerce_currency("₹ -50,000") == Decimal("-50000.00")
+    assert coerce_currency("- 1.5 Cr") == Decimal("-15000000.00")
+    assert coerce_currency("−10 Lakhs") == Decimal("-1000000.00")
+    assert coerce_currency("50,000,") == Decimal("50000.00")
 
     with pytest.raises(ValueError):
         coerce_currency(None)

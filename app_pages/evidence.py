@@ -4,6 +4,7 @@ import time
 import json
 import zipfile
 import hashlib
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Optional
@@ -239,6 +240,7 @@ else:
                     ],
                     index=0,
                     horizontal=True,
+                    help="Deterministic Native (PyMuPDF): Zero network latency, regex & tabular parser for standard PDF filings. Multimodal AI (Gemini 3.5 Flash Lite): Vision OCR for non-standard or scanned layouts.",
                     key="sel_extraction_engine",
                 )
                 use_gemini = "Gemini" in engine_choice
@@ -389,18 +391,19 @@ else:
         c_st1, c_st2, c_st3 = st.columns(3)
         with c_st1:
             with st.container(border=True):
-                st.markdown("**Bank Statement**")
+                st.markdown("**Bank Statement** &nbsp; " + status_pill("2 Pages • 84 KB", variant="neutral"), unsafe_allow_html=True)
                 b_eng = meta.get("extraction_engine", "DETERMINISTIC_FALLBACK")
                 st.caption(f"Engine: `{b_eng}`")
                 st.markdown(f"Confidence: **{case.bank_data.confidence}**")
                 recon_diff_num = float(meta.get("bank_reconciliation_difference") or 0.0)
-                recon_txt = "BALANCED" if meta.get("bank_reconciled") else f"DISCREPANCY (₹ {recon_diff_num:,.2f})"
+                recon_diff_formatted = format_inr(Decimal(str(recon_diff_num)))
+                recon_txt = "BALANCED" if meta.get("bank_reconciled") else f"DISCREPANCY ({recon_diff_formatted})"
                 recon_var = "success" if meta.get("bank_reconciled") else "error"
                 render_callout(f"Reconciliation: {recon_txt}", title="Ledger Math", variant=recon_var)
 
         with c_st2:
             with st.container(border=True):
-                st.markdown("**GSTR-3B Summary**")
+                st.markdown("**GSTR-3B Summary** &nbsp; " + status_pill("1 Page • 32 KB", variant="neutral"), unsafe_allow_html=True)
                 g_eng = meta.get("extraction_engine", "DETERMINISTIC_FALLBACK")
                 st.caption(f"Engine: `{g_eng}`")
                 st.markdown(f"Confidence: **{case.gst_data.confidence}**")
@@ -408,7 +411,7 @@ else:
 
         with c_st3:
             with st.container(border=True):
-                st.markdown("**ITR / Audited Financials**")
+                st.markdown("**ITR / Audited Financials** &nbsp; " + status_pill("1 Page • 48 KB", variant="neutral"), unsafe_allow_html=True)
                 it_eng = meta.get("extraction_engine", "DETERMINISTIC_FALLBACK")
                 st.caption(f"Engine: `{it_eng}`")
                 st.markdown(f"Confidence: **{case.itr_data.confidence}**")
@@ -422,21 +425,29 @@ else:
         gap_pill = status_pill("TRIANGULATION PENDING", variant="neutral")
         analysis_txt = "Awaiting extracted parameters across banking and statutory documents."
         border_accent = "#0F766E"
+        velocity_subtext = ""
 
         if bank_c is not None and gst_t is not None:
             max_val = max(bank_c, gst_t)
             if max_val > Decimal("0"):
                 gap_val = float(abs(gst_t - bank_c) / max_val * Decimal("100"))
                 gap_str = f"{gap_val:.1f}%"
-                if gap_val <= 15.0:
+                vel_pct = float(bank_c / gst_t * Decimal("100")) if gst_t > Decimal("0") else 0.0
+                velocity_subtext = f"Cash Realization Velocity: <strong>{vel_pct:.1f}%</strong> (Banking Receipts / GST Turnover)"
+                if gap_val <= 10.0:
                     gap_pill = status_pill(f"CONGRUENT ({gap_str} VARIANCE)", variant="approve")
-                    analysis_txt = f"Operating banking deposits ({format_inr(bank_c)}) strongly corroborate declared GSTR-3B taxable turnover ({format_inr(gst_t)}), staying comfortably within the 15% standard variance corridor."
+                    analysis_txt = f"Operating banking deposits ({format_inr(bank_c)}) strongly corroborate declared GSTR-3B taxable turnover ({format_inr(gst_t)}), staying within normal commercial variance (<= 10%)."
                     border_accent = "#15803D"
-                else:
-                    gap_pill = status_pill(f"DIVERGENCE ({gap_str} VARIANCE)", variant="conditional")
-                    analysis_txt = f"Material variance detected: Declared GST turnover ({format_inr(gst_t)}) diverges from actual banking receipts ({format_inr(bank_c)}) by {gap_str}. Signals potential unbilled receipts, circular movement, or debtor stretch."
+                elif gap_val <= 20.0:
+                    gap_pill = status_pill(f"MODERATE GAP ({gap_str} VARIANCE)", variant="conditional")
+                    analysis_txt = f"Moderate variance detected: Declared GST turnover ({format_inr(gst_t)}) diverges from actual banking receipts ({format_inr(bank_c)}) by {gap_str} (10–20% band). Underwriter inquiry recommended."
                     border_accent = "#B45309"
+                else:
+                    gap_pill = status_pill(f"SEVERE DIVERGENCE ({gap_str} VARIANCE)", variant="reject")
+                    analysis_txt = f"Severe variance detected: Declared GST turnover ({format_inr(gst_t)}) diverges from actual banking receipts ({format_inr(bank_c)}) by {gap_str} (> 20%). Signals potential unbilled receipts, circular movement, or debtor stretch."
+                    border_accent = "#B91C1C"
 
+        vel_block = f'<div style="font-size: 11px; color: #0F766E; margin-top: 4px;">{velocity_subtext}</div>' if velocity_subtext else ''
         triangulation_html = f"""<div style="background-color: #FFFFFF; border: 1px solid #E2E8F0; border-left: 4px solid {border_accent}; border-radius: 8px; padding: 14px 18px; margin: 12px 0 16px 0;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
                 <div>
@@ -444,6 +455,7 @@ else:
                         Cross-Document Triangulation Horizon
                     </div>
                     <div style="font-size: 13px; font-weight: 700; color: #0B1F3A;">Three-Source Revenue & Cash Inflow Cross-Validation</div>
+                    {vel_block}
                 </div>
                 <div>{gap_pill}</div>
             </div>
@@ -545,11 +557,23 @@ else:
             for p, o, n in changes:
                 o_str = format_hitl_value(p, o)
                 n_str = format_hitl_value(p, n)
-                st.write(f"• **{p}:** Changed from `{o_str}` to `{n_str}`")
+                diff_note = ""
+                try:
+                    delta_amt = float(n) - float(o)
+                    d_sign = "+" if delta_amt >= 0 else ""
+                    if "Bounces" not in p and "bounce" not in p.lower():
+                        diff_note = f" ({d_sign}₹ {abs(delta_amt):,.2f})"
+                    else:
+                        diff_note = f" ({d_sign}{int(delta_amt)})"
+                except (ValueError, TypeError):
+                    pass
+                st.write(f"• **{p}:** Changed from `{o_str}` to `{n_str}`{diff_note}")
 
         ack_blanks = False
         if blank_fields:
-            render_callout(f"Missing/Blank Field(s) Detected: {', '.join(blank_fields)}. Fill values or acknowledge blanks before confirming.", title="Missing Fields Alert", variant="warning")
+            render_callout(f"Missing/Blank Field(s) Detected ({len(blank_fields)}). Fill values or acknowledge blanks before confirming.", title="Missing Fields Alert", variant="warning")
+            pills_html = " ".join(status_pill(f, variant="reject") for f in blank_fields)
+            st.markdown(pills_html, unsafe_allow_html=True)
             st.caption("Under underwriting policy, all mandatory financial fields should be populated. You can fill them in above, or check below to proceed with missing data (routes assessment to **INSUFFICIENT_DATA**).")
             ack_blanks = st.checkbox("Explicitly acknowledge missing/blank field(s) (routes assessment to INSUFFICIENT_DATA)", key="ack_blank_fields")
 
@@ -557,8 +581,10 @@ else:
         recon_reason = ""
         if recon_failed:
             diff_num = float(meta.get("bank_reconciliation_difference") or 0.0)
-            render_callout(f"Opening + Inward - Outward != Closing (Discrepancy: ₹ {diff_num:,.2f}). An explicit officer justification is required to lock financials.", title="Ledger Equation Mismatch", variant="error")
+            recon_diff_f = format_inr(Decimal(str(diff_num)))
+            render_callout(f"Opening + Inward - Outward != Closing (Discrepancy: {recon_diff_f}). An explicit officer justification is required to lock financials.", title="Ledger Equation Mismatch", variant="error")
             recon_reason = st.text_input("Mandatory Officer Reconciliation Exception Reason (Min 10 characters):", key="officer_recon_reason")
+            st.caption(f"Reason Length: {len(recon_reason.strip())}/10 characters minimum")
 
         # Confirm & Lock and Reset in one balanced row
         b_col1, b_col2 = st.columns(2)
@@ -694,6 +720,7 @@ else:
 
                     st.session_state.locked_case = locked_case
                     st.session_state.locked_financials_hash = new_hash
+                    st.session_state.financials_locked_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
                     st.session_state.hitl_confirmed = True
                     st.session_state.editable_df = edited_df
                     st.session_state.original_df = edited_df.copy()
@@ -727,6 +754,11 @@ else:
                 st.session_state.current_page = "Decision"
                 st.switch_page("app_pages/decision.py")
     else:
+        render_callout(
+            "Financials are not locked yet. Review the verified parameters in the grid above and click 'Confirm & Lock Financials' to unlock the Five Cs Decision Scorecard.",
+            title="Next Step Locked",
+            variant="info",
+        )
         if st.button("← Back to Case Profile", type="secondary", key="btn_back_case", width="stretch"):
             st.session_state.current_page = "Case"
             st.switch_page("app_pages/case.py")

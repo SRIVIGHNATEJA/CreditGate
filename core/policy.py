@@ -93,7 +93,12 @@ COLLATERAL_COVERAGE_BANDS: List[Tuple[Decimal, Decimal, Decimal]] = [
 # BANK RISK-BASED FACILITY PRICING MATRIX
 # Benchmark: RBI Repo Rate / MCLR Base Rate = 6.50%
 # ============================================================================
-BANK_REPO_BENCHMARK_RATE = Decimal("6.50")
+import os
+
+try:
+    BANK_REPO_BENCHMARK_RATE = Decimal(os.getenv("CREDITGATE_REPO_RATE", "6.50"))
+except Exception:
+    BANK_REPO_BENCHMARK_RATE = Decimal("6.50")
 
 BANK_PRICING_SPREADS: Dict[Verdict, Dict[str, Any]] = {
     Verdict.APPROVE: {
