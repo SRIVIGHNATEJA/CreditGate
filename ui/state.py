@@ -108,6 +108,8 @@ def init_session_state():
     """Initializes all required session-state variables if not present."""
     if "lock_cleared_message" not in st.session_state:
         st.session_state.lock_cleared_message = None
+    if "session_started_at" not in st.session_state:
+        st.session_state.session_started_at = datetime.now(timezone.utc).strftime("%H:%M UTC")
     if "app_id" not in st.session_state:
         st.session_state.app_id = generate_application_id("Apex Synthetic Holdings (Demo)")
     if "audit_trail" not in st.session_state:
@@ -270,6 +272,9 @@ def render_sidebar() -> Dict[str, Any]:
             <div style="font-size: 11px; font-weight: 600; color: #0F766E; letter-spacing: 0.04em; text-transform: uppercase; margin-top: 2px;">
                 AI MSME Underwriting Copilot
             </div>
+            <div style="font-size: 10px; font-weight: 500; color: #64748B; margin-top: 2px;">
+                Consortium Syndicate MSME Desk
+            </div>
             <div style="margin-top: 8px; background: #FFFFFF; border: 1px solid #CBD5E1; border-left: 3px solid #0F766E; border-radius: 4px; padding: 5px 8px; font-size: 11px; color: #1E293B;">
                 <span style="font-size: 9px; color: #64748B; font-weight: 700; text-transform: uppercase;">Active Dossier:</span><br/>
                 <code style="font-size: 11px; font-weight: 600; color: #0B1F3A;">{st.session_state.app_id}</code>
@@ -304,7 +309,7 @@ def render_sidebar() -> Dict[str, Any]:
             st.markdown(f"**4. Committee CAM Audit:** &nbsp; {p_cam}", unsafe_allow_html=True)
 
         # 2. Reset Case Button
-        if st.button(":material/restart_alt: Reset Active Case", key="sb_btn_reset_case", width="stretch"):
+        if st.button(":material/restart_alt: Reset Active Case", key="sb_btn_reset_case", width="stretch", help="Resets locks, extraction caches, and overrides while keeping the selected cohort"):
             cur_cohort = st.session_state.get("active_cohort_selection", "Cohort 1: Prime MSME (Apex Synthetic Demo)")
             select_and_reset_cohort(cur_cohort)
             st.rerun()
@@ -316,10 +321,18 @@ def render_sidebar() -> Dict[str, Any]:
             if is_chain_valid:
                 evt_count = len(st.session_state.get("audit_trail", []))
                 st.markdown(f"**Chain Status:** &nbsp; {status_pill('Verified Chain', variant='approve')}", unsafe_allow_html=True)
-                st.caption(f"{evt_count} tamper-evident SHA-256 blocks chained")
+                if evt_count > 0:
+                    gen_hash = st.session_state["audit_trail"][0].get("current_hash", "")[:8]
+                    st.caption(f"{evt_count} blocks chained • Genesis: `{gen_hash}...`")
+                else:
+                    st.caption(f"{evt_count} tamper-evident SHA-256 blocks chained")
             else:
                 st.markdown(f"**Chain Status:** &nbsp; {status_pill('Tampered', variant='reject')}", unsafe_allow_html=True)
                 st.caption(f"Error: {chain_err}")
+            
+            s_time = st.session_state.get("session_started_at")
+            if s_time:
+                st.caption(f"Terminal session started: {s_time}")
 
     return get_app_context()
 

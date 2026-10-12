@@ -159,7 +159,12 @@ ctx = render_sidebar()
 # ----------------------------------------------------------------------------
 
 st.markdown('<div class="main-title">CreditGate: AI MSME Underwriting Copilot</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-title">1. Case &nbsp;|&nbsp; 2. Evidence &nbsp;|&nbsp; 3. Decision &nbsp;|&nbsp; 4. CAM & Audit</div>', unsafe_allow_html=True)
+active_workflow_stage = st.session_state.get("current_page", "Case")
+b1 = f'<strong style="color: #0F766E;">1. Case</strong>' if "case" in str(active_workflow_stage).lower() else "1. Case"
+b2 = f'<strong style="color: #0F766E;">2. Evidence</strong>' if "evidence" in str(active_workflow_stage).lower() else "2. Evidence"
+b3 = f'<strong style="color: #0F766E;">3. Decision</strong>' if "decision" in str(active_workflow_stage).lower() else "3. Decision"
+b4 = f'<strong style="color: #0F766E;">4. CAM & Audit</strong>' if ("cam" in str(active_workflow_stage).lower() or "audit" in str(active_workflow_stage).lower()) else "4. CAM & Audit"
+st.markdown(f'<div class="sub-title">{b1} &nbsp;|&nbsp; {b2} &nbsp;|&nbsp; {b3} &nbsp;|&nbsp; {b4}</div>', unsafe_allow_html=True)
 
 active_workflow_stage = st.session_state.get("current_page", "Case")
 render_stepper(active_workflow_stage)
