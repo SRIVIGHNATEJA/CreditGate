@@ -374,61 +374,62 @@ with col_facility:
                 st.rerun()
 
         # 7. Complete Formal Specification Form (preserves test indices & allows fine-tuning)
-        with st.form(key="case_facility_form"):
-            form_loan = st.number_input(
-                "Requested Facility (₹)",
-                min_value=100000.0,
-                value=float(st.session_state.facility_loan_amount),
-                step=500000.0,
-                format="%.2f",
-                key="form_loan_amount",
-            )
-            form_tenure = st.slider(
-                "Tenure (Months)",
-                min_value=12,
-                max_value=84,
-                value=int(st.session_state.facility_tenure_months),
-                step=6,
-                key="form_tenure_months",
-                help="Applicant requested repayment amortization horizon. Milestones: 12M (1 Yr), 36M (3 Yrs), 60M (5 Yrs), 84M (7 Yrs)."
-            )
-            form_rate = st.slider(
-                "Policy Lending Rate (%)",
-                min_value=7.5,
-                max_value=24.0,
-                value=float(st.session_state.facility_interest_rate),
-                step=0.25,
-                key="form_interest_rate",
-                help="Derived autonomously from Bank Risk Policy matrix. Adjust if discretionary credit committee concession is sanctioned."
-            )
-            form_collat = st.number_input(
-                "Pledged Collateral (₹)",
-                min_value=0.0,
-                value=float(st.session_state.facility_collateral_val),
-                step=100000.0,
-                format="%.2f",
-                help="Immovable property, fixed assets, or liquid collateral pledged.",
-                key="form_collateral_val",
-            )
-            form_cgtmse = st.checkbox(
-                "CGTMSE Guarantee Covered",
-                value=bool(st.session_state.facility_cgtmse_covered),
-                help="Credit Guarantee Fund Trust for Micro and Small Enterprises coverage active.",
-                key="form_cgtmse_covered",
-            )
-            submitted = st.form_submit_button(":material/save: Apply Facility Terms", type="primary", width="stretch")
-            if submitted:
-                st.session_state.facility_loan_amount = float(form_loan)
-                st.session_state.facility_tenure_months = int(form_tenure)
-                st.session_state.facility_interest_rate = float(form_rate)
-                st.session_state.facility_collateral_val = float(form_collat)
-                st.session_state.facility_cgtmse_covered = bool(form_cgtmse)
-                st.session_state.loan_amount = float(form_loan)
-                st.session_state.tenure_months = int(form_tenure)
-                st.session_state.interest_rate = float(form_rate)
-                st.session_state.collateral_value = float(form_collat)
-                st.session_state.cgtmse_covered = bool(form_cgtmse)
-                st.rerun()
+        with st.expander("⚙️ Calibrate Facility Parameters & Discretionary Pricing (Credit Committee)", expanded=False):
+            with st.form(key="case_facility_form"):
+                form_loan = st.number_input(
+                    "Requested Facility (₹)",
+                    min_value=100000.0,
+                    value=float(st.session_state.facility_loan_amount),
+                    step=500000.0,
+                    format="%.2f",
+                    key="form_loan_amount",
+                )
+                form_tenure = st.slider(
+                    "Tenure (Months)",
+                    min_value=12,
+                    max_value=84,
+                    value=int(st.session_state.facility_tenure_months),
+                    step=6,
+                    key="form_tenure_months",
+                    help="Applicant requested repayment amortization horizon. Milestones: 12M (1 Yr), 36M (3 Yrs), 60M (5 Yrs), 84M (7 Yrs)."
+                )
+                form_rate = st.slider(
+                    "Policy Lending Rate (%)",
+                    min_value=7.5,
+                    max_value=24.0,
+                    value=float(st.session_state.facility_interest_rate),
+                    step=0.25,
+                    key="form_interest_rate",
+                    help="Derived autonomously from Bank Risk Policy matrix. Adjust if discretionary credit committee concession is sanctioned."
+                )
+                form_collat = st.number_input(
+                    "Pledged Collateral (₹)",
+                    min_value=0.0,
+                    value=float(st.session_state.facility_collateral_val),
+                    step=100000.0,
+                    format="%.2f",
+                    help="Immovable property, fixed assets, or liquid collateral pledged.",
+                    key="form_collateral_val",
+                )
+                form_cgtmse = st.checkbox(
+                    "CGTMSE Guarantee Covered",
+                    value=bool(st.session_state.facility_cgtmse_covered),
+                    help="Credit Guarantee Fund Trust for Micro and Small Enterprises coverage active.",
+                    key="form_cgtmse_covered",
+                )
+                submitted = st.form_submit_button(":material/save: Apply Facility Terms", type="primary", width="stretch")
+                if submitted:
+                    st.session_state.facility_loan_amount = float(form_loan)
+                    st.session_state.facility_tenure_months = int(form_tenure)
+                    st.session_state.facility_interest_rate = float(form_rate)
+                    st.session_state.facility_collateral_val = float(form_collat)
+                    st.session_state.facility_cgtmse_covered = bool(form_cgtmse)
+                    st.session_state.loan_amount = float(form_loan)
+                    st.session_state.tenure_months = int(form_tenure)
+                    st.session_state.interest_rate = float(form_rate)
+                    st.session_state.collateral_value = float(form_collat)
+                    st.session_state.cgtmse_covered = bool(form_cgtmse)
+                    st.rerun()
 
         # 8. Visual Collateral Coverage Progress Meter
         req_l = float(st.session_state.facility_loan_amount)
