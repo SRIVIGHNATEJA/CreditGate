@@ -230,12 +230,12 @@ with col_borrower:
                 render_kpi_card("Industry Sector", sec_short, subtext="MSME Activity")
                 render_kpi_card("Registration Base", "State Udyam Portal", subtext="MSME Registration")
 
-# RIGHT COLUMN: FACILITY TERMS (ONE st.form per B1)
+# RIGHT COLUMN: FACILITY TERMS & CAPITAL VISUALIZATION
 with col_facility:
     with st.container(border=True):
-        st.markdown("#### :material/payments: Facility Terms")
+        st.markdown("#### :material/monitoring: Facility Term Sheet & Risk Pricing")
         
-        # Bank Policy Pricing Context
+        # 1. Bank Policy Pricing Context
         is_large_ticket = float(st.session_state.facility_loan_amount) > 10000000.0
         base_spread = 3.75 if is_c1 else (7.25 if is_c2 else 5.00)
         spread_tier_add = 0.50 if is_large_ticket else 0.0
@@ -253,33 +253,127 @@ with col_facility:
         else:
             concession_chip = status_pill(f"Risk Surcharge: +{delta_rate:.2f}%", variant="conditional")
 
-        pricing_badge = f'<div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid #0F766E; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; font-size: 12px; color: #1E293B; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;"><div><strong>Bank Policy Pricing:</strong> RBI Repo (6.50%) + {effective_spread:.2f}% ({policy_tier_name}) = <strong>{benchmark_rate:.2f}% p.a.</strong></div><div>{concession_chip}</div></div>'
+        pricing_badge = f'<div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid #0F766E; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; font-size: 12px; color: #1E293B; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;"><div><strong>Bank Policy Benchmark:</strong> RBI Repo (6.50%) + {effective_spread:.2f}% ({policy_tier_name}) = <strong>{benchmark_rate:.2f}% p.a.</strong></div><div>{concession_chip}</div></div>'
         st.markdown(pricing_badge, unsafe_allow_html=True)
 
-        # Quick Facility Amount Presets
-        st.markdown("<div style='font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; margin-bottom: 4px;'>Loan Amount Presets:</div>", unsafe_allow_html=True)
+        # 2. Live Amortization & Debt Service Outflow Calculation
+        P_dec = Decimal(str(st.session_state.facility_loan_amount))
+        r_dec = Decimal(str(st.session_state.facility_interest_rate))
+        n_int = int(st.session_state.facility_tenure_months)
+
+        from core.analyser import calculate_monthly_emi
+        live_emi = calculate_monthly_emi(P_dec, r_dec, n_int)
+        total_repayment = live_emi * Decimal(str(n_int))
+        total_interest_cost = total_repayment - P_dec
+        pct_p = float(P_dec / total_repayment * Decimal("100")) if total_repayment > 0 else 100.0
+        pct_i = float(total_interest_cost / total_repayment * Decimal("100")) if total_repayment > 0 else 0.0
+
+        # 3. High-Impact Visual Term Sheet HUD (4 KPI Cards in 2x2 grid)
+        hud_col1, hud_col2 = st.columns(2)
+        with hud_col1:
+            render_kpi_card(
+                "Requested Facility",
+                f"₹ {float(P_dec)/100000:.1f} Lakhs",
+                subtext=f"{format_inr(P_dec)}",
+                tooltip="Sanctioned credit facility limit",
+            )
+            render_kpi_card(
+                "Monthly EMI Obligation",
+                format_inr(live_emi),
+                subtext=f"Over {n_int} Months ({n_int//12} Yrs)",
+                tooltip="Equated Monthly Installment via Annuity Formula",
+            )
+        with hud_col2:
+            render_kpi_card(
+                "Lending Rate",
+                f"{float(r_dec):.2f}% p.a.",
+                delta=f"{delta_rate:+.2f}% vs Policy" if abs(delta_rate) >= 0.01 else "At Benchmark",
+                delta_color="normal" if abs(delta_rate) < 0.01 else ("teal" if delta_rate < 0 else "warning"),
+                tooltip="Risk-adjusted lending rate",
+            )
+            render_kpi_card(
+                "Total Interest Outflow",
+                format_inr(total_interest_cost),
+                subtext=f"{pct_i:.1f}% Cost of Capital",
+                tooltip=f"Cumulative interest cost over {n_int} months",
+            )
+
+        # 4. Interactive Capital Outflow Visualizer (Plotly Horizontal Breakdown)
+        import plotly.graph_objects as go
+        fig_amort = go.Figure()
+        fig_amort.add_trace(go.Bar(
+            y=["Capital Split"],
+            x=[float(P_dec)],
+            name=f"Principal ({pct_p:.1f}%)",
+            orientation="h",
+            marker=dict(color="#0F766E"),
+            text=f"Principal: ₹{float(P_dec)/100000:.1f}L ({pct_p:.1f}%)",
+            textposition="inside",
+            insidetextanchor="middle",
+            hoverinfo="text",
+        ))
+        fig_amort.add_trace(go.Bar(
+            y=["Capital Split"],
+            x=[float(total_interest_cost)],
+            name=f"Interest Cost ({pct_i:.1f}%)",
+            orientation="h",
+            marker=dict(color="#64748B"),
+            text=f"Interest: ₹{float(total_interest_cost)/100000:.1f}L ({pct_i:.1f}%)",
+            textposition="inside",
+            insidetextanchor="middle",
+            hoverinfo="text",
+        ))
+        fig_amort.update_layout(
+            barmode="stack",
+            height=60,
+            margin=dict(l=0, r=0, t=5, b=5),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            showlegend=False,
+            xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
+            yaxis=dict(showgrid=False, showticklabels=False),
+        )
+        st.plotly_chart(fig_amort, use_container_width=True, config={"displayModeBar": False})
+
+        # 5. Smart One-Click Scenario Controls (No manual numeric typing required!)
+        st.markdown("<div style='font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; margin: 4px 0 2px 0;'>1-Click Facility Presets:</div>", unsafe_allow_html=True)
         col_ps1, col_ps2, col_ps3, col_ps4 = st.columns(4)
         with col_ps1:
-            if st.button("₹25L", key="btn_pre_25l", width="stretch", help="Set facility to ₹25 Lakhs"):
+            if st.button("₹25L", key="btn_pre_25l", width="stretch", help="Set facility to ₹25 Lakhs (Micro-Enterprise)"):
                 st.session_state.facility_loan_amount = 2500000.0
                 st.session_state.loan_amount = 2500000.0
                 st.rerun()
         with col_ps2:
-            if st.button("₹50L", key="btn_pre_50l", width="stretch", help="Set facility to ₹50 Lakhs"):
+            if st.button("₹50L", key="btn_pre_50l", width="stretch", help="Set facility to ₹50 Lakhs (Standard Term Loan)"):
                 st.session_state.facility_loan_amount = 5000000.0
                 st.session_state.loan_amount = 5000000.0
                 st.rerun()
         with col_ps3:
-            if st.button("₹75L", key="btn_pre_75l", width="stretch", help="Set facility to ₹75 Lakhs"):
+            if st.button("₹75L", key="btn_pre_75l", width="stretch", help="Set facility to ₹75 Lakhs (Growth Capital)"):
                 st.session_state.facility_loan_amount = 7500000.0
                 st.session_state.loan_amount = 7500000.0
                 st.rerun()
         with col_ps4:
-            if st.button("₹1.0Cr", key="btn_pre_1cr", width="stretch", help="Set facility to ₹1.00 Crore"):
+            if st.button("₹1.0Cr", key="btn_pre_1cr", width="stretch", help="Set facility to ₹1.00 Crore (Syndicate Limit)"):
                 st.session_state.facility_loan_amount = 10000000.0
                 st.session_state.loan_amount = 10000000.0
                 st.rerun()
 
+        # 6. Smart Rate Calibration Controls
+        r_col1, r_col2 = st.columns([1.2, 1])
+        with r_col1:
+            if st.button(f":material/bolt: Auto-Align to Policy ({benchmark_rate:.2f}%)", key="btn_auto_rate", width="stretch", help=f"Auto-sets interest rate to {benchmark_rate:.2f}% p.a. matching bank policy"):
+                st.session_state.facility_interest_rate = benchmark_rate
+                st.session_state.interest_rate = benchmark_rate
+                st.rerun()
+        with r_col2:
+            if st.button(":material/percent: -0.50% Concession", key="btn_concession_quick", width="stretch", help="Apply 50 bps discretionary credit committee concession"):
+                new_c_rate = max(7.5, float(st.session_state.facility_interest_rate) - 0.50)
+                st.session_state.facility_interest_rate = new_c_rate
+                st.session_state.interest_rate = new_c_rate
+                st.rerun()
+
+        # 7. Complete Formal Specification Form (preserves test indices & allows fine-tuning)
         with st.form(key="case_facility_form"):
             form_loan = st.number_input(
                 "Requested Facility (₹)",
@@ -324,13 +418,11 @@ with col_facility:
             )
             submitted = st.form_submit_button(":material/save: Apply Facility Terms", type="primary", width="stretch")
             if submitted:
-                # B2: Persist in plain session_state keys
                 st.session_state.facility_loan_amount = float(form_loan)
                 st.session_state.facility_tenure_months = int(form_tenure)
                 st.session_state.facility_interest_rate = float(form_rate)
                 st.session_state.facility_collateral_val = float(form_collat)
                 st.session_state.facility_cgtmse_covered = bool(form_cgtmse)
-                # Synced plain aliases
                 st.session_state.loan_amount = float(form_loan)
                 st.session_state.tenure_months = int(form_tenure)
                 st.session_state.interest_rate = float(form_rate)
@@ -338,20 +430,25 @@ with col_facility:
                 st.session_state.cgtmse_covered = bool(form_cgtmse)
                 st.rerun()
 
-        # Computed EMI shown directly after Apply per B1
-        render_kpi_card(
-            "Computed Monthly EMI",
-            format_inr(ctx["computed_monthly_emi"]),
-            subtext="Banking Annuity Formula",
-            tooltip="P*r*(1+r)^n / ((1+r)^n - 1)",
-        )
-
+        # 8. Visual Collateral Coverage Progress Meter
         req_l = float(st.session_state.facility_loan_amount)
         pled_c = float(st.session_state.facility_collateral_val)
         cov_pct = (pled_c / req_l * 100.0) if req_l > 0 else 0.0
         cov_variant = "approve" if cov_pct >= 100.0 else ("conditional" if cov_pct >= 50.0 else "neutral")
+        cov_color = "#15803D" if cov_pct >= 100.0 else ("#B45309" if cov_pct >= 50.0 else "#94A3B8")
         cov_pill = status_pill(f"{cov_pct:.1f}% Covered", variant=cov_variant)
-        st.markdown(f"<div style='font-size: 12px; color: #475569; margin: 4px 0 8px 0;'><strong>Collateral Coverage Ratio:</strong> {cov_pill} &nbsp; ({format_inr(pled_c)} / {format_inr(req_l)})</div>", unsafe_allow_html=True)
+
+        cov_meter_html = f"""<div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 10px 12px; margin: 8px 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <span style="font-size: 12px; font-weight: 600; color: #1E293B;">Collateral Coverage Ratio:</span>
+                <div>{cov_pill} &nbsp; <span style="font-size: 11px; color: #64748B;">({format_inr(pled_c)} / {format_inr(req_l)})</span></div>
+            </div>
+            <div style="background: #E2E8F0; border-radius: 9999px; height: 6px; width: 100%; overflow: hidden;">
+                <div style="background: {cov_color}; width: {min(100.0, cov_pct)}%; height: 100%; border-radius: 9999px;"></div>
+            </div>
+        </div>"""
+        st.markdown(cov_meter_html, unsafe_allow_html=True)
+
         if st.session_state.facility_cgtmse_covered:
             st.caption(":material/verified_user: CGTMSE Trust Cover Active: Credit guarantee covers eligible debt. Annual fee approx 0.75%–1.00% p.a.")
 
