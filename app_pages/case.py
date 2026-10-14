@@ -115,31 +115,35 @@ col_borrower, col_facility = st.columns([1, 1], gap="medium")
 
 # LEFT COLUMN: BORROWER PROFILE
 with col_borrower:
-    with st.container(border=True):
-        st.markdown("#### :material/domain: Borrower Profile")
-        is_corp = st.toggle("Registered Corporate? (MCA CIN)", value=bool(is_corporate), key="case_is_corporate")
+    if is_corporate:
+        # 1. ACTIVE CORPORATE VIEW (Crisp MCA-21 Dossier)
+        with st.container(border=True):
+            st.markdown("#### :material/domain: Borrower Master Dossier (MCA-21)")
+            is_corp = st.toggle("Registered Corporate? (MCA CIN)", value=True, key="case_is_corporate")
 
-        if is_corp != is_corporate:
-            st.session_state.active_is_corporate = is_corp
-            st.session_state.extracted_case = None
-            st.session_state.extraction_meta = None
-            st.session_state.hitl_confirmed = False
-            st.session_state.editable_df = None
-            st.session_state.original_df = None
-            st.session_state.locked_case = None
-            st.session_state.locked_financials_hash = None
-            st.session_state.scored_financials_hash = None
-            st.session_state.scored_composite_hash = None
-            st.session_state.score_result = None
-            st.session_state.officer_notes = []
-            st.session_state.executive_override = None
-            st.session_state.cam_markdown = None
-            st.session_state.current_research_report = None
-            st.session_state.last_research_cache_key = None
-            st.session_state.lock_cleared_message = "Lock cleared because entity type changed."
-            st.rerun()
+            if is_corp != is_corporate:
+                st.session_state.active_is_corporate = is_corp
+                # Switch to unincorporated PAN to prevent ghost corporate error
+                if st.session_state.get("active_pan_input", "").strip().upper() == "AAACA1234B":
+                    st.session_state.active_pan_input = "AAAPA1234B"
+                st.session_state.extracted_case = None
+                st.session_state.extraction_meta = None
+                st.session_state.hitl_confirmed = False
+                st.session_state.editable_df = None
+                st.session_state.original_df = None
+                st.session_state.locked_case = None
+                st.session_state.locked_financials_hash = None
+                st.session_state.scored_financials_hash = None
+                st.session_state.scored_composite_hash = None
+                st.session_state.score_result = None
+                st.session_state.officer_notes = []
+                st.session_state.executive_override = None
+                st.session_state.cam_markdown = None
+                st.session_state.current_research_report = None
+                st.session_state.last_research_cache_key = None
+                st.session_state.lock_cleared_message = "Lock cleared because entity type changed."
+                st.rerun()
 
-        if is_corp:
             cin_val = st.text_input("Corporate ID Number (CIN)", value=ctx["cin_input"], key="case_cin_input")
             if cin_val != ctx["cin_input"]:
                 st.session_state.active_cin_selection = cin_val
@@ -172,41 +176,35 @@ with col_borrower:
                 )
                 if cin_parsed_data.get("low_vintage_risk_flag"):
                     render_callout("Business vintage < 3 years indicates elevated early-stage default risk.", title="Vintage Warning", variant="warning")
-        else:
-            render_callout("Unregistered MSME / Proprietorship mode active.", title="Entity Mode", variant="info")
-            render_callout("Tip: For Sole Proprietorships, 4th character of PAN is 'P' (Individual) or 'F' (Partnership Firm).", title="MSME PAN Guidance", variant="info")
-            st.selectbox("Industry Macro Sector", list(NIC_SECTOR_TAXONOMY.values()), index=0, key="case_manual_sector")
-            st.number_input("Business Vintage (Years)", min_value=1, max_value=60, value=7, key="case_manual_vintage")
 
-        pan_val = st.text_input("Permanent Account Number (PAN)", value=ctx["pan_input"], key="case_pan_input")
-        if pan_val.strip().upper() != ctx["pan_input"].strip().upper():
-            st.session_state.active_pan_input = pan_val.strip().upper()
-            st.session_state.extracted_case = None
-            st.session_state.extraction_meta = None
-            st.session_state.hitl_confirmed = False
-            st.session_state.editable_df = None
-            st.session_state.original_df = None
-            st.session_state.locked_case = None
-            st.session_state.locked_financials_hash = None
-            st.session_state.scored_financials_hash = None
-            st.session_state.scored_composite_hash = None
-            st.session_state.score_result = None
-            st.session_state.officer_notes = []
-            st.session_state.executive_override = None
-            st.session_state.cam_markdown = None
-            st.session_state.current_research_report = None
-            st.session_state.last_research_cache_key = None
-            st.session_state.lock_cleared_message = "Lock cleared because PAN changed."
-            st.rerun()
+            pan_val = st.text_input("Permanent Account Number (PAN)", value=ctx["pan_input"], key="case_pan_input")
+            if pan_val.strip().upper() != ctx["pan_input"].strip().upper():
+                st.session_state.active_pan_input = pan_val.strip().upper()
+                st.session_state.extracted_case = None
+                st.session_state.extraction_meta = None
+                st.session_state.hitl_confirmed = False
+                st.session_state.editable_df = None
+                st.session_state.original_df = None
+                st.session_state.locked_case = None
+                st.session_state.locked_financials_hash = None
+                st.session_state.scored_financials_hash = None
+                st.session_state.scored_composite_hash = None
+                st.session_state.score_result = None
+                st.session_state.officer_notes = []
+                st.session_state.executive_override = None
+                st.session_state.cam_markdown = None
+                st.session_state.current_research_report = None
+                st.session_state.last_research_cache_key = None
+                st.session_state.lock_cleared_message = "Lock cleared because PAN changed."
+                st.rerun()
 
-        if not pan_check.get("is_valid", False):
-            render_callout(pan_check.get("error", "Invalid PAN Format"), title="Invalid PAN Format", variant="error")
-        elif pan_check.get("mismatch_detected", False):
-            render_callout(pan_check.get("warning_message", ""), title="Consistency Alert", variant="error")
-        else:
-            render_callout(f"PAN 4th character '{pan_check.get('pan_entity_char')}' aligns with {pan_check.get('pan_entity_type')}.", title="Entity Verified", variant="success")
+            if not pan_check.get("is_valid", False):
+                render_callout(pan_check.get("error", "Invalid PAN Format"), title="Invalid PAN Format", variant="error")
+            elif pan_check.get("mismatch_detected", False):
+                render_callout(pan_check.get("warning_message", ""), title="Consistency Alert", variant="error")
+            else:
+                render_callout(f"PAN 4th character '{pan_check.get('pan_entity_char')}' aligns with {pan_check.get('pan_entity_type')}.", title="Entity Verified", variant="success")
 
-        if is_corporate:
             bcol1, bcol2 = st.columns(2)
             with bcol1:
                 render_kpi_card("Entity Status", "Active Corporate", subtext="MCA Status")
@@ -218,17 +216,103 @@ with col_borrower:
                 render_kpi_card("Industry Sector", sec_short, subtext="NIC Taxonomy")
                 s_name = cin_parsed_data["state_name"] if (cin_parsed_data and "state_name" in cin_parsed_data) else "Pan-India"
                 render_kpi_card("Jurisdiction State", s_name, subtext="RoC Jurisdiction")
-        else:
+
+    else:
+        # 2. PALE / DEACTIVATED VIEW (Dimmed Shell for Unincorporated MSME)
+        with st.container(border=True):
+            st.markdown(f"#### :material/domain_disabled: Borrower Dossier &nbsp; {status_pill('MCA: DEACTIVATED', variant='neutral')}", unsafe_allow_html=True)
+            is_corp = st.toggle("Registered Corporate? (MCA CIN)", value=False, key="case_is_corporate")
+
+            if is_corp != is_corporate:
+                st.session_state.active_is_corporate = is_corp
+                # Switch back to corporate PAN
+                if is_corp and st.session_state.get("active_pan_input", "").strip().upper() == "AAAPA1234B":
+                    st.session_state.active_pan_input = "AAACA1234B"
+                st.session_state.extracted_case = None
+                st.session_state.extraction_meta = None
+                st.session_state.hitl_confirmed = False
+                st.session_state.editable_df = None
+                st.session_state.original_df = None
+                st.session_state.locked_case = None
+                st.session_state.locked_financials_hash = None
+                st.session_state.scored_financials_hash = None
+                st.session_state.scored_composite_hash = None
+                st.session_state.score_result = None
+                st.session_state.officer_notes = []
+                st.session_state.executive_override = None
+                st.session_state.cam_markdown = None
+                st.session_state.current_research_report = None
+                st.session_state.last_research_cache_key = None
+                st.session_state.lock_cleared_message = "Lock cleared because entity type changed."
+                st.rerun()
+
+            # Pale / Muted notification callout
+            st.markdown("""<div style="background: #F8FAFC; border: 1px dashed #94A3B8; border-radius: 6px; padding: 10px 14px; margin: 8px 0 12px 0;">
+                <div style="font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 3px;">
+                    MCA-21 Corporate Registry: Bypassed / Inactive
+                </div>
+                <div style="font-size: 12px; color: #64748B; line-height: 1.4;">
+                    Entity registration under Companies Act (MCA-21) is <strong>deactivated</strong>. Evaluating applicant under <strong>Unincorporated MSME / Sole Proprietorship</strong> guidelines via Udyam Aadhaar & promoter credit parameters.
+                </div>
+            </div>""", unsafe_allow_html=True)
+
+            st.selectbox("Industry Macro Sector", list(NIC_SECTOR_TAXONOMY.values()), index=0, key="case_manual_sector")
+            man_vin = st.slider("Promoter Business Vintage (Years)", min_value=1, max_value=60, value=int(st.session_state.get("case_manual_vintage", 7)), key="case_manual_vintage", help="Vintage in years since establishment")
+
+            pan_val = st.text_input("Promoter PAN (Individual / Firm)", value=ctx["pan_input"], key="case_pan_input")
+            if pan_val.strip().upper() != ctx["pan_input"].strip().upper():
+                st.session_state.active_pan_input = pan_val.strip().upper()
+                st.session_state.extracted_case = None
+                st.session_state.extraction_meta = None
+                st.session_state.hitl_confirmed = False
+                st.session_state.editable_df = None
+                st.session_state.original_df = None
+                st.session_state.locked_case = None
+                st.session_state.locked_financials_hash = None
+                st.session_state.scored_financials_hash = None
+                st.session_state.scored_composite_hash = None
+                st.session_state.score_result = None
+                st.session_state.officer_notes = []
+                st.session_state.executive_override = None
+                st.session_state.cam_markdown = None
+                st.session_state.current_research_report = None
+                st.session_state.last_research_cache_key = None
+                st.session_state.lock_cleared_message = "Lock cleared because PAN changed."
+                st.rerun()
+
+            if not pan_check.get("is_valid", False):
+                render_callout(pan_check.get("error", "Invalid PAN Format"), title="Invalid PAN Format", variant="error")
+            elif pan_check.get("mismatch_detected", False):
+                render_callout(pan_check.get("warning_message", ""), title="Consistency Alert", variant="error")
+            else:
+                render_callout(f"Promoter PAN verified: 4th character '{pan_check.get('pan_entity_char')}' matches {pan_check.get('pan_entity_type')}.", title="Entity Verified", variant="success")
+
+            # Pale, dimmed KPI cards (muted palette #F1F5F9, gray text #64748B)
             bcol1, bcol2 = st.columns(2)
             with bcol1:
-                render_kpi_card("Entity Mode", "Unregistered MSME", subtext="Non-Corporate Entity")
-                man_vin = st.session_state.get("case_manual_vintage", 7)
-                render_kpi_card("Operating Vintage", f"{man_vin} Years", subtext="Promoter Track Record")
+                st.markdown("""<div style="background: #F1F5F9; border: 1px dashed #CBD5E1; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px;">
+                    <div style="font-size: 11px; font-weight: 600; color: #94A3B8; text-transform: uppercase;">Entity Mode</div>
+                    <div style="font-size: 15px; font-weight: 700; color: #64748B; margin-top: 2px;">Unincorporated MSME</div>
+                    <div style="font-size: 11px; color: #94A3B8; margin-top: 2px;">MCA Bypassed</div>
+                </div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div style="background: #F1F5F9; border: 1px dashed #CBD5E1; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px;">
+                    <div style="font-size: 11px; font-weight: 600; color: #94A3B8; text-transform: uppercase;">Operating Vintage</div>
+                    <div style="font-size: 15px; font-weight: 700; color: #64748B; margin-top: 2px;">{man_vin} Years</div>
+                    <div style="font-size: 11px; color: #94A3B8; margin-top: 2px;">Promoter Track Record</div>
+                </div>""", unsafe_allow_html=True)
             with bcol2:
                 man_sec = st.session_state.get("case_manual_sector", list(NIC_SECTOR_TAXONOMY.values())[0])
                 sec_short = man_sec[:22] + "..." if len(man_sec) > 22 else man_sec
-                render_kpi_card("Industry Sector", sec_short, subtext="MSME Activity")
-                render_kpi_card("Registration Base", "State Udyam Portal", subtext="MSME Registration")
+                st.markdown(f"""<div style="background: #F1F5F9; border: 1px dashed #CBD5E1; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px;">
+                    <div style="font-size: 11px; font-weight: 600; color: #94A3B8; text-transform: uppercase;">Industry Sector</div>
+                    <div style="font-size: 15px; font-weight: 700; color: #64748B; margin-top: 2px;">{sec_short}</div>
+                    <div style="font-size: 11px; color: #94A3B8; margin-top: 2px;">Udyam Category</div>
+                </div>""", unsafe_allow_html=True)
+                st.markdown("""<div style="background: #F1F5F9; border: 1px dashed #CBD5E1; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px;">
+                    <div style="font-size: 11px; font-weight: 600; color: #94A3B8; text-transform: uppercase;">Registration Base</div>
+                    <div style="font-size: 15px; font-weight: 700; color: #64748B; margin-top: 2px;">State Udyam Portal</div>
+                    <div style="font-size: 11px; color: #94A3B8; margin-top: 2px;">Non-RoC Filing</div>
+                </div>""", unsafe_allow_html=True)
 
 # RIGHT COLUMN: FACILITY TERMS & CAPITAL VISUALIZATION
 with col_facility:
@@ -325,8 +409,8 @@ with col_facility:
         ))
         fig_amort.update_layout(
             barmode="stack",
-            height=60,
-            margin=dict(l=0, r=0, t=5, b=5),
+            height=54,
+            margin=dict(l=0, r=0, t=4, b=4),
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             showlegend=False,
@@ -335,7 +419,26 @@ with col_facility:
         )
         st.plotly_chart(fig_amort, use_container_width=True, config={"displayModeBar": False})
 
-        # 5. Smart One-Click Scenario Controls (No manual numeric typing required!)
+        # 5. Visual Collateral Coverage Progress Meter
+        req_l = float(st.session_state.facility_loan_amount)
+        pled_c = float(st.session_state.facility_collateral_val)
+        cov_pct = (pled_c / req_l * 100.0) if req_l > 0 else 0.0
+        cov_variant = "approve" if cov_pct >= 100.0 else ("conditional" if cov_pct >= 50.0 else "neutral")
+        cov_color = "#15803D" if cov_pct >= 100.0 else ("#B45309" if cov_pct >= 50.0 else "#94A3B8")
+        cov_pill = status_pill(f"{cov_pct:.1f}% Covered", variant=cov_variant)
+
+        cov_meter_html = f"""<div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px 12px; margin: 4px 0 8px 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                <span style="font-size: 11px; font-weight: 600; color: #1E293B;">Collateral Coverage Ratio:</span>
+                <div>{cov_pill} &nbsp; <span style="font-size: 11px; color: #64748B;">({format_inr(pled_c)} / {format_inr(req_l)})</span></div>
+            </div>
+            <div style="background: #E2E8F0; border-radius: 9999px; height: 5px; width: 100%; overflow: hidden;">
+                <div style="background: {cov_color}; width: {min(100.0, cov_pct)}%; height: 100%; border-radius: 9999px;"></div>
+            </div>
+        </div>"""
+        st.markdown(cov_meter_html, unsafe_allow_html=True)
+
+        # 6. Smart 1-Click Scenario & Policy Alignment Controls
         st.markdown("<div style='font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; margin: 4px 0 2px 0;'>1-Click Facility Presets:</div>", unsafe_allow_html=True)
         col_ps1, col_ps2, col_ps3, col_ps4 = st.columns(4)
         with col_ps1:
@@ -359,7 +462,6 @@ with col_facility:
                 st.session_state.loan_amount = 10000000.0
                 st.rerun()
 
-        # 6. Smart Rate Calibration Controls
         r_col1, r_col2 = st.columns([1.2, 1])
         with r_col1:
             if st.button(f":material/bolt: Auto-Align to Policy ({benchmark_rate:.2f}%)", key="btn_auto_rate", width="stretch", help=f"Auto-sets interest rate to {benchmark_rate:.2f}% p.a. matching bank policy"):
@@ -430,25 +532,6 @@ with col_facility:
                     st.session_state.collateral_value = float(form_collat)
                     st.session_state.cgtmse_covered = bool(form_cgtmse)
                     st.rerun()
-
-        # 8. Visual Collateral Coverage Progress Meter
-        req_l = float(st.session_state.facility_loan_amount)
-        pled_c = float(st.session_state.facility_collateral_val)
-        cov_pct = (pled_c / req_l * 100.0) if req_l > 0 else 0.0
-        cov_variant = "approve" if cov_pct >= 100.0 else ("conditional" if cov_pct >= 50.0 else "neutral")
-        cov_color = "#15803D" if cov_pct >= 100.0 else ("#B45309" if cov_pct >= 50.0 else "#94A3B8")
-        cov_pill = status_pill(f"{cov_pct:.1f}% Covered", variant=cov_variant)
-
-        cov_meter_html = f"""<div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 10px 12px; margin: 8px 0;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                <span style="font-size: 12px; font-weight: 600; color: #1E293B;">Collateral Coverage Ratio:</span>
-                <div>{cov_pill} &nbsp; <span style="font-size: 11px; color: #64748B;">({format_inr(pled_c)} / {format_inr(req_l)})</span></div>
-            </div>
-            <div style="background: #E2E8F0; border-radius: 9999px; height: 6px; width: 100%; overflow: hidden;">
-                <div style="background: {cov_color}; width: {min(100.0, cov_pct)}%; height: 100%; border-radius: 9999px;"></div>
-            </div>
-        </div>"""
-        st.markdown(cov_meter_html, unsafe_allow_html=True)
 
         if st.session_state.facility_cgtmse_covered:
             st.caption(":material/verified_user: CGTMSE Trust Cover Active: Credit guarantee covers eligible debt. Annual fee approx 0.75%–1.00% p.a.")

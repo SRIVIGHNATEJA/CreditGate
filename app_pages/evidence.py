@@ -52,6 +52,23 @@ st.markdown(f"**Status:** &nbsp; {chip_docs} &nbsp;|&nbsp; {chip_ext} &nbsp;|&nb
 if st.session_state.get("lock_cleared_message"):
     render_callout(st.session_state.lock_cleared_message, title="Lock Status Notice", variant="warning")
 
+# Active Facility Sanction Context
+collateral_val = ctx.get("collateral_val", 0.0)
+cgtmse_covered = ctx.get("cgtmse_covered", True)
+cgtmse_txt = "CGTMSE Covered" if cgtmse_covered else "Standard Security"
+fac_ref_html = f"""<div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid #0F766E; border-radius: 6px; padding: 9px 14px; margin: 10px 0 14px 0; font-size: 12px; color: #1E293B; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+    <div>
+        <span style="font-size: 10px; font-weight: 700; color: #0F766E; text-transform: uppercase; letter-spacing: 0.05em;">Sanction Facility Context:</span><br/>
+        <strong style="font-size: 13px; color: #0B1F3A;">{format_inr(loan_amount)}</strong> ({int(tenure_months)} Mos @ {float(interest_rate):.2f}% p.a.) &nbsp;•&nbsp; 
+        <strong>Monthly Obligation:</strong> {format_inr(proposed_emi)} &nbsp;•&nbsp; 
+        <strong>Collateral:</strong> {format_inr(collateral_val)} ({cgtmse_txt})
+    </div>
+    <div style="font-size: 11px; color: #64748B;">
+        <em>Financial evidence extracted below verifies DSCR against this facility obligation.</em>
+    </div>
+</div>"""
+st.markdown(fac_ref_html, unsafe_allow_html=True)
+
 # ----------------------------------------------------------------------------
 # 1. INTAKE: DRAG-AND-DROP OR SAMPLE CASE BADGE
 # ----------------------------------------------------------------------------
