@@ -306,8 +306,9 @@ with col_borrower:
 # RIGHT COLUMN: FACILITY TERMS & CAPITAL VISUALIZATION
 with col_facility:
     with st.container(border=True):
-        st.markdown("#### :material/monitoring: Facility Term Sheet & Risk Pricing")
-        
+        st.markdown("#### :material/account_balance: Facility Term Sheet & Risk-Based Pricing")
+        st.caption("Autonomous risk-based loan facility configuration with RBI repo benchmark spread alignment.")
+
         # 1. Bank Policy Pricing Context
         is_large_ticket = float(st.session_state.facility_loan_amount) > 10000000.0
         base_spread = 3.75 if is_c1 else (7.25 if is_c2 else 5.00)
@@ -326,8 +327,13 @@ with col_facility:
         else:
             concession_chip = status_pill(f"Risk Surcharge: +{delta_rate:.2f}%", variant="conditional")
 
-        pricing_badge = f'<div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid #0F766E; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; font-size: 12px; color: #1E293B; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;"><div><strong>Bank Policy Benchmark:</strong> RBI Repo (6.50%) + {effective_spread:.2f}% ({policy_tier_name}) = <strong>{benchmark_rate:.2f}% p.a.</strong></div><div>{concession_chip}</div></div>'
-        st.markdown(pricing_badge, unsafe_allow_html=True)
+        pricing_badge = f"""<div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid #0F766E; border-radius: 6px; padding: 10px 14px; margin: 6px 0 12px 0; font-size: 12px; color: #1E293B; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div>
+                <strong>Bank Policy Benchmark:</strong> RBI Repo (6.50%) + {effective_spread:.2f}% ({policy_tier_name}) = <strong>{benchmark_rate:.2f}% p.a.</strong>
+            </div>
+            <div>{concession_chip}</div>
+        </div>"""
+        _render_html(pricing_badge)
 
         # 2. Live Amortization & Debt Service Outflow Calculation
         P_dec = Decimal(str(st.session_state.facility_loan_amount))
@@ -425,7 +431,7 @@ with col_facility:
                 <div style="background: {cov_color}; width: {min(100.0, cov_pct)}%; height: 100%; border-radius: 9999px;"></div>
             </div>
         </div>"""
-        st.markdown(cov_meter_html, unsafe_allow_html=True)
+        _render_html(cov_meter_html)
 
         # 6. Smart 1-Click Scenario & Policy Alignment Controls
         st.markdown("<div style='font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; margin: 4px 0 2px 0;'>1-Click Facility Presets:</div>", unsafe_allow_html=True)

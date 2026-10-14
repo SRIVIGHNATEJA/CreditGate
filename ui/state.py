@@ -365,20 +365,26 @@ def render_sidebar() -> Dict[str, Any]:
             </div>"""
             _render_html(header_pipe)
             st.progress(prog_val)
-            stages_html = f"""<div style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px;">
+
+            stage_bg1 = "background: #F0FDFA; border-left: 3px solid #0F766E; padding: 3px 6px;" if is_p1_active else "padding: 3px 6px;"
+            stage_bg2 = "background: #F0FDFA; border-left: 3px solid #0F766E; padding: 3px 6px;" if is_p2_active else "padding: 3px 6px;"
+            stage_bg3 = "background: #F0FDFA; border-left: 3px solid #0F766E; padding: 3px 6px;" if is_p3_active else "padding: 3px 6px;"
+            stage_bg4 = "background: #F0FDFA; border-left: 3px solid #0F766E; padding: 3px 6px;" if is_p4_active else "padding: 3px 6px;"
+
+            stages_html = f"""<div style="margin-top: 8px; display: flex; flex-direction: column; gap: 4px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; {stage_bg1} border-radius: 4px;">
                     <span style="font-weight: {'700' if is_p1_active else '500'}; color: {'#0F766E' if is_p1_active else '#334155'};">1. Case & Terms</span>
                     {p_case}
                 </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; {stage_bg2} border-radius: 4px;">
                     <span style="font-weight: {'700' if is_p2_active else '500'}; color: {'#0F766E' if is_p2_active else '#334155'};">2. Evidence Data</span>
                     {p_ev}
                 </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; {stage_bg3} border-radius: 4px;">
                     <span style="font-weight: {'700' if is_p3_active else '500'}; color: {'#0F766E' if is_p3_active else '#334155'};">3. Risk & Scoring</span>
                     {p_dec}
                 </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; {stage_bg4} border-radius: 4px;">
                     <span style="font-weight: {'700' if is_p4_active else '500'}; color: {'#0F766E' if is_p4_active else '#334155'};">4. Committee CAM</span>
                     {p_cam}
                 </div>

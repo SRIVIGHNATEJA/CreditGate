@@ -147,35 +147,36 @@ st.markdown("""
 
     /* Institutional Sidebar Ribbon Aesthetics */
     section[data-testid="stSidebar"] {
-        background-color: #F8FAFC !important;
+        background: linear-gradient(180deg, #F8FAFC 0%, #F1F5F9 100%) !important;
         border-right: 1px solid #E2E8F0 !important;
-        box-shadow: 2px 0 12px rgba(15, 23, 42, 0.03) !important;
+        box-shadow: 2px 0 16px rgba(15, 23, 42, 0.04) !important;
     }
     section[data-testid="stSidebar"] div[data-testid="stSidebarHeader"] {
         padding-bottom: 0px !important;
     }
     section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] {
-        padding-top: 4px !important;
-        margin-bottom: 8px !important;
+        padding-top: 6px !important;
+        margin-bottom: 10px !important;
     }
     section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] a {
         border-radius: 6px !important;
         margin: 2px 4px !important;
-        padding: 6px 12px !important;
+        padding: 7px 12px !important;
         font-size: 13px !important;
         font-weight: 500 !important;
         color: #475569 !important;
         transition: all 0.15s ease-in-out !important;
     }
     section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] a:hover {
-        background-color: #F1F5F9 !important;
+        background-color: #EEF2F6 !important;
         color: #0F766E !important;
     }
     section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] a[aria-current="page"] {
         background: linear-gradient(90deg, #0B1F3A 0%, #162C4E 100%) !important;
         color: #FFFFFF !important;
         font-weight: 700 !important;
-        box-shadow: 0 2px 6px rgba(11, 31, 58, 0.2) !important;
+        border-left: 3px solid #0F766E !important;
+        box-shadow: 0 2px 8px rgba(11, 31, 58, 0.25) !important;
     }
     section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] a[aria-current="page"] span {
         color: #FFFFFF !important;
@@ -183,6 +184,12 @@ st.markdown("""
     section[data-testid="stSidebar"] hr {
         margin: 10px 0 !important;
         border-top: 1px solid #E2E8F0 !important;
+    }
+    section[data-testid="stSidebar"] div[data-testid="stVerticalBlockBorderWrapper"] {
+        background: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
+        border-radius: 8px !important;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03) !important;
     }
 </style>
 """, unsafe_allow_html=True)
