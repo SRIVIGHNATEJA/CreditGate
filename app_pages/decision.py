@@ -507,26 +507,29 @@ if res is not None:
 
         is_demo_cohort = bool(cohort_selection and cohort_selection != "None (Manual Upload)")
 
-        # Anchored Target Command Console
-        command_deck_html = f"""<div style="background: linear-gradient(135deg, #0B1F3A 0%, #162C4E 100%); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(11, 31, 58, 0.12);">
+        # Anchored Target Command Console (Light Institutional Design)
+        command_deck_html = f"""<div style="background: #FFFFFF; border: 1px solid #CBD5E1; border-top: 3px solid #0F766E; border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);">
             <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
                 <div>
-                    <div style="font-size: 10px; font-weight: 700; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.05em;">Surveillance Target Identity</div>
-                    <div style="font-size: 15px; font-weight: 800; color: #FFFFFF; margin-top: 2px;">{company_nm}</div>
-                    <div style="display: flex; gap: 8px; margin-top: 4px; font-size: 11px;">
-                        <span style="color: #38BDF8; font-family: monospace; background: rgba(56, 189, 248, 0.12); padding: 1px 6px; border-radius: 4px;">CIN: {active_cin}</span>
-                        <span style="color: #A7F3D0; font-family: monospace; background: rgba(16, 185, 129, 0.15); padding: 1px 6px; border-radius: 4px;">PAN: {current_pan_val}</span>
+                    <div style="font-size: 10px; font-weight: 700; color: #0F766E; text-transform: uppercase; letter-spacing: 0.05em;">Surveillance Target Identity</div>
+                    <div style="font-size: 15px; font-weight: 800; color: #0B1F3A; margin-top: 2px;">{company_nm}</div>
+                    <div style="display: flex; gap: 8px; margin-top: 5px; font-size: 11px;">
+                        <span style="color: #0F766E; font-family: monospace; font-weight: 600; background: #CCFBF1; border: 1px solid #99F6E4; padding: 2px 7px; border-radius: 4px;">CIN: {active_cin}</span>
+                        <span style="color: #334155; font-family: monospace; font-weight: 600; background: #F1F5F9; border: 1px solid #E2E8F0; padding: 2px 7px; border-radius: 4px;">PAN: {current_pan_val}</span>
                     </div>
                 </div>
                 <div style="text-align: right;">
-                    <div style="display: inline-block; background: rgba(15, 118, 110, 0.4); border: 1px solid rgba(20, 184, 166, 0.5); border-radius: 9999px; padding: 3px 10px; font-size: 10px; font-weight: 700; color: #2DD4BF;">
+                    <div style="display: inline-block; background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 9999px; padding: 3px 10px; font-size: 10px; font-weight: 700; color: #0F766E;">
                         {'CURATED BENCHMARK DOCKETS' if is_demo_cohort else 'ENTERPRISE REGISTRY GATEWAY'}
                     </div>
-                    <div style="font-size: 9px; color: #94A3B8; margin-top: 3px;">Jurisdiction: All-India Courts & Benches</div>
+                    <div style="font-size: 9px; color: #64748B; margin-top: 3px;">Jurisdiction: 672 District Courts, High Courts & Tribunals</div>
                 </div>
             </div>
-            <div style="background: rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 5px; padding: 8px 10px; font-family: monospace; font-size: 11px; color: #E2E8F0; overflow-x: auto;">
-                <span style="color: #F59E0B; font-weight: 700;">ANCHOR_QUERY</span> &gt;&gt; <span style="color: #38BDF8;">"{company_nm}"</span> <span style="color: #F43F5E; font-weight: 700;">AND</span> <span style="color: #A7F3D0;">"{active_cin}"</span>
+            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 5px; padding: 8px 12px; font-family: monospace; font-size: 11px; color: #334155; display: flex; justify-content: space-between; align-items: center; overflow-x: auto;">
+                <div>
+                    <span style="color: #D97706; font-weight: 700;">ANCHOR_QUERY</span> &gt;&gt; <span style="color: #0F766E; font-weight: 700;">"{company_nm}"</span> <span style="color: #DC2626; font-weight: 700;">AND</span> <span style="color: #2563EB; font-weight: 700;">"{active_cin}"</span>
+                </div>
+                <span style="font-size: 9px; color: #64748B; font-family: sans-serif; background: #E2E8F0; padding: 1px 6px; border-radius: 3px;">CIN Strict Match</span>
             </div>
         </div>"""
         _render_html(command_deck_html)
@@ -669,9 +672,17 @@ if res is not None:
                                 ReviewStatus.UNREVIEWED: status_pill("ACTION REQUIRED: UNREVIEWED", variant="conditional"),
                             }.get(f.review_status, status_pill(str(f.review_status), variant="neutral"))
 
-                            st.markdown(f"**{f.title}** &nbsp; {tier_label} &nbsp; {rev_pill}", unsafe_allow_html=True)
-                            st.caption(f.snippet)
-                            st.markdown(f"[:material/link: Direct Official Source Registry]({f.source_url})")
+                            docket_border = "#EF4444" if f.tier == FindingTier.SEVERE else ("#F59E0B" if f.tier == FindingTier.REVIEW else "#0EA5E9")
+                            docket_header = f"""<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <span style="font-family: monospace; font-size: 10px; font-weight: 700; color: #0F766E; background: #CCFBF1; border: 1px solid #99F6E4; padding: 2px 7px; border-radius: 4px;">DOCKET #{f.id.upper()}</span>
+                                <div style="display: flex; gap: 6px; align-items: center;">{tier_label} &nbsp; {rev_pill}</div>
+                            </div>
+                            <div style="font-size: 13px; font-weight: 700; color: #0B1F3A; line-height: 1.35; margin-bottom: 6px;">{f.title}</div>
+                            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid {docket_border}; border-radius: 4px; padding: 8px 12px; margin-bottom: 8px; font-size: 11.5px; color: #334155; line-height: 1.45;">
+                                {f.snippet}
+                            </div>"""
+                            _render_html(docket_header)
+                            st.markdown(f"[:material/open_in_new: Official Source Registry Docket]({f.source_url})")
                         with col_t2:
                             if f.review_status == ReviewStatus.CONFIRMED:
                                 render_callout(f"Status: CONFIRMED\n\nCitation: {f.confirmation_note or 'N/A'}\nBy: {f.reviewed_by}", title="Officer Confirmed", variant="error")

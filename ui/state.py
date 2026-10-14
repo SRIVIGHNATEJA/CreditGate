@@ -20,6 +20,7 @@ from core.onboarding import (
 from core.analyser import calculate_monthly_emi
 from core.formatting import format_inr
 from core.audit_logger import AuditLogger, verify_chain
+from core.policy import Verdict
 from ui.components import render_kpi_card, render_callout, status_pill, _render_html, _clean_html
 
 COHORT_COMPANY_NAMES = {
@@ -294,41 +295,84 @@ def render_sidebar() -> Dict[str, Any]:
         is_p3_active = "decision" in curr_page
         is_p4_active = ("cam" in curr_page or "audit" in curr_page)
 
-        # 1. Executive Brand & Command Identity Card
-        brand_card = f"""<div style="background: linear-gradient(145deg, #0B1F3A 0%, #162C4E 100%); border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(11, 31, 58, 0.12); border: 1px solid rgba(255, 255, 255, 0.08);">
+        # 1. Executive Brand & Command Identity Card (Light Institutional Design)
+        brand_card = f"""<div style="background: #FFFFFF; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04); border: 1px solid #E2E8F0; border-top: 3px solid #0F766E;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                 <div style="display: flex; align-items: center; gap: 7px;">
-                    <div style="background: #0F766E; width: 22px; height: 22px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #FFFFFF; box-shadow: 0 2px 4px rgba(15, 118, 110, 0.4);">
+                    <div style="background: #0F766E; width: 22px; height: 22px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #FFFFFF; box-shadow: 0 2px 4px rgba(15, 118, 110, 0.25);">
                         🛡️
                     </div>
                     <div>
-                        <div style="font-size: 13px; font-weight: 800; color: #FFFFFF; letter-spacing: 0.03em; line-height: 1.1;">CREDITGATE</div>
-                        <div style="font-size: 9px; font-weight: 600; color: #94A3B8; letter-spacing: 0.05em; text-transform: uppercase;">v3.0 ENTERPRISE</div>
+                        <div style="font-size: 13px; font-weight: 800; color: #0B1F3A; letter-spacing: 0.03em; line-height: 1.1;">CREDITGATE</div>
+                        <div style="font-size: 9px; font-weight: 600; color: #64748B; letter-spacing: 0.05em; text-transform: uppercase;">v3.0 ENTERPRISE</div>
                     </div>
                 </div>
-                <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 9999px; padding: 2px 7px; display: flex; align-items: center; gap: 4px;">
-                    <span style="display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: #10B981; box-shadow: 0 0 6px #10B981;"></span>
-                    <span style="font-size: 9px; font-weight: 700; color: #34D399; letter-spacing: 0.04em; text-transform: uppercase;">ONLINE</span>
+                <div style="background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 9999px; padding: 2px 7px; display: flex; align-items: center; gap: 4px;">
+                    <span style="display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: #10B981;"></span>
+                    <span style="font-size: 9px; font-weight: 700; color: #059669; letter-spacing: 0.04em; text-transform: uppercase;">ONLINE</span>
                 </div>
             </div>
-            <div style="background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; padding: 8px 10px; margin-top: 6px;">
+            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px 10px; margin-top: 6px;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-size: 9px; font-weight: 700; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.05em;">Active Dossier</span>
-                    <span style="font-size: 10px; font-weight: 600; color: #38BDF8; font-family: monospace;">{app_id}</span>
+                    <span style="font-size: 9px; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: 0.05em;">Active Dossier</span>
+                    <span style="font-size: 10px; font-weight: 600; color: #0F766E; font-family: monospace; background: #CCFBF1; padding: 1px 5px; border-radius: 3px;">{app_id}</span>
                 </div>
-                <div style="font-size: 12px; font-weight: 700; color: #FFFFFF; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{company_name}">
+                <div style="font-size: 12px; font-weight: 700; color: #0B1F3A; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{company_name}">
                     {company_name}
                 </div>
-                <div style="font-size: 10px; color: #94A3B8; margin-top: 3px; display: flex; justify-content: space-between;">
-                    <span>Sanction: <strong style="color: #F1F5F9;">₹{loan_amt/100000:.1f}L</strong></span>
-                    <span>Rate: <strong style="color: #F1F5F9;">{rate_val:.2f}%</strong></span>
-                    <span>Tenor: <strong style="color: #F1F5F9;">{tenure_val}M</strong></span>
+                <div style="font-size: 10px; color: #64748B; margin-top: 4px; display: flex; justify-content: space-between;">
+                    <span>Sanction: <strong style="color: #0B1F3A;">₹{loan_amt/100000:.1f}L</strong></span>
+                    <span>Rate: <strong style="color: #0F766E;">{rate_val:.2f}%</strong></span>
+                    <span>Tenor: <strong style="color: #0B1F3A;">{tenure_val}M</strong></span>
                 </div>
             </div>
         </div>"""
         _render_html(brand_card)
 
-        # 2. Connected Workflow Progression Pipeline
+        # 2. Live Underwriting Risk Scorecard HUD
+        score_res = st.session_state.get("score_result")
+        if score_res is not None and score_res.final_verdict != Verdict.INSUFFICIENT_DATA:
+            override_info = st.session_state.get("executive_override")
+            is_overridden = bool(override_info and override_info.get("override_active"))
+            eff_verdict = override_info.get("override_verdict") if is_overridden else score_res.final_verdict.name
+
+            c_score = float(score_res.composite_score)
+            score_col = "#10B981" if c_score >= 70.0 else ("#F59E0B" if c_score >= 50.0 else "#EF4444")
+            v_variant = "approve" if eff_verdict == "APPROVE" else ("conditional" if eff_verdict == "CONDITIONAL" else "reject")
+            v_pill = status_pill(eff_verdict, variant=v_variant)
+
+            dscr_val = float(score_res.dscr)
+            dscr_col = "#0F766E" if dscr_val >= 1.20 else "#EF4444"
+            total_ded = sum(float(d.points_deducted) for d in score_res.deductions)
+
+            with st.container(border=True):
+                score_hud = f"""<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <span style="font-size: 10px; font-weight: 700; color: #0F766E; text-transform: uppercase; letter-spacing: 0.05em;">Live Scorecard HUD</span>
+                    {v_pill}
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px;">
+                    <div>
+                        <span style="font-size: 18px; font-weight: 800; color: #0B1F3A;">{c_score:.1f}</span>
+                        <span style="font-size: 10px; font-weight: 600; color: #64748B;">/ 100 pts</span>
+                    </div>
+                    <span style="font-size: 9.5px; font-weight: 700; color: {score_col}; text-transform: uppercase;">{'PRIME' if c_score >= 70 else ('MODERATE' if c_score >= 50 else 'STRESSED')}</span>
+                </div>
+                <div style="background: #E2E8F0; border-radius: 9999px; height: 5px; width: 100%; overflow: hidden; margin-bottom: 6px;">
+                    <div style="background: {score_col}; width: {min(100.0, max(0.0, c_score))}%; height: 100%; border-radius: 9999px;"></div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 4px; padding: 4px 6px;">
+                        <div style="font-size: 8.5px; color: #64748B; font-weight: 600; text-transform: uppercase;">DSCR Cover</div>
+                        <div style="font-size: 11px; font-weight: 700; color: {dscr_col};">{dscr_val:.2f}x</div>
+                    </div>
+                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 4px; padding: 4px 6px;">
+                        <div style="font-size: 8.5px; color: #64748B; font-weight: 600; text-transform: uppercase;">Deductions</div>
+                        <div style="font-size: 11px; font-weight: 700; color: {'#EF4444' if total_ded > 0 else '#0F766E'};">-{total_ded:.1f} pts</div>
+                    </div>
+                </div>"""
+                _render_html(score_hud)
+
+        # 3. Connected Workflow Progression Pipeline
         is_extracted = (st.session_state.get("locked_case") is not None or st.session_state.get("extracted_case") is not None)
         is_locked = (st.session_state.get("locked_case") is not None)
         is_scored = (st.session_state.get("score_result") is not None)
@@ -391,7 +435,7 @@ def render_sidebar() -> Dict[str, Any]:
             </div>"""
             _render_html(stages_html)
 
-        # 3. Live Sanction Envelope HUD (Underwriting Desk Strip)
+        # 4. Live Sanction Envelope HUD & 1-Click Ticket Simulator
         ent_mode = "Corporate" if is_corporate else "Unincorporated"
         ent_badge = status_pill(ent_mode, variant="info" if is_corporate else "neutral")
         collat_chip = "CGTMSE" if cgtmse_cov else f"{cov_pct:.0f}%"
@@ -401,7 +445,7 @@ def render_sidebar() -> Dict[str, Any]:
                 <span style="font-size: 10px; font-weight: 700; color: #0F766E; text-transform: uppercase; letter-spacing: 0.05em;">Sanction Terms</span>
                 {ent_badge}
             </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 8px;">
                 <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 5px; padding: 5px 8px;">
                     <div style="font-size: 9px; font-weight: 600; color: #94A3B8; text-transform: uppercase;">Facility</div>
                     <div style="font-size: 12px; font-weight: 700; color: #0B1F3A;">₹ {loan_amt/100000:.1f}L</div>
@@ -421,7 +465,31 @@ def render_sidebar() -> Dict[str, Any]:
             </div>"""
             _render_html(terms_html)
 
-        # 4. Cryptographic Audit Seal Block
+            # Ticket Size Simulator Chips (Strictly st.button to maintain positional index compatibility)
+            st.markdown("<div style='font-size: 9px; font-weight: 700; color: #64748B; text-transform: uppercase; margin-bottom: 3px;'>Simulate Ticket:</div>", unsafe_allow_html=True)
+            col_sb1, col_sb2, col_sb3, col_sb4 = st.columns(4)
+            with col_sb1:
+                if st.button("25L", key="sb_btn_pre_25l", width="stretch", help="Set facility to ₹25 Lakhs"):
+                    st.session_state.facility_loan_amount = 2500000.0
+                    st.session_state.loan_amount = 2500000.0
+                    st.rerun()
+            with col_sb2:
+                if st.button("50L", key="sb_btn_pre_50l", width="stretch", help="Set facility to ₹50 Lakhs"):
+                    st.session_state.facility_loan_amount = 5000000.0
+                    st.session_state.loan_amount = 5000000.0
+                    st.rerun()
+            with col_sb3:
+                if st.button("75L", key="sb_btn_pre_75l", width="stretch", help="Set facility to ₹75 Lakhs"):
+                    st.session_state.facility_loan_amount = 7500000.0
+                    st.session_state.loan_amount = 7500000.0
+                    st.rerun()
+            with col_sb4:
+                if st.button("1Cr", key="sb_btn_pre_1cr", width="stretch", help="Set facility to ₹1.0 Crore"):
+                    st.session_state.facility_loan_amount = 10000000.0
+                    st.session_state.loan_amount = 10000000.0
+                    st.rerun()
+
+        # 5. Cryptographic Audit Seal Block
         is_chain_valid, chain_err = verify_chain(st.session_state.get("audit_trail", []))
         evt_count = len(st.session_state.get("audit_trail", []))
         chain_status_pill = status_pill("Verified Chain", variant="approve") if is_chain_valid else status_pill("Tampered", variant="reject")
@@ -447,7 +515,7 @@ def render_sidebar() -> Dict[str, Any]:
             </div>"""
             _render_html(seal_html)
 
-        # 5. Reset Case Button
+        # 6. Reset Case Button
         if st.button(":material/restart_alt: Reset Active Dossier", key="sb_btn_reset_case", width="stretch", help="Resets locks, extraction caches, and overrides while keeping the selected cohort"):
             cur_cohort = st.session_state.get("active_cohort_selection", "Cohort 1: Prime MSME (Apex Synthetic Demo)")
             select_and_reset_cohort(cur_cohort)
