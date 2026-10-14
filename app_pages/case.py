@@ -1,7 +1,7 @@
 import streamlit as st
 from decimal import Decimal
 from ui.state import get_app_context, record_event, select_and_reset_cohort
-from ui.components import render_kpi_card, render_callout, status_pill
+from ui.components import render_kpi_card, render_callout, status_pill, _render_html
 from core.formatting import format_inr
 from core.onboarding import validate_cin_syntax, parse_cin, check_entity_consistency, NIC_SECTOR_TAXONOMY
 
@@ -40,7 +40,7 @@ with g_col1:
         st.markdown('<div style="font-size: 10px; font-weight: 700; color: #15803D; letter-spacing: 0.05em; text-transform: uppercase;">Archetype: Tier-1 Prime MSME</div>', unsafe_allow_html=True)
         c1_chip = f" &nbsp; {status_pill('ACTIVE', variant='info')}" if is_c1 else ""
         st.markdown(f"**1. Prime MSME**{c1_chip}", unsafe_allow_html=True)
-        st.markdown(f"**Apex Synthetic Holdings (Demo)** &nbsp; {status_pill('APPROVE', variant='approve')}", unsafe_allow_html=True)
+        st.markdown(f"**Apex Synthetic Holdings (Demo)** &nbsp; {status_pill('APPROVE', variant='approve') if is_corporate else status_pill('OFF', variant='neutral')}", unsafe_allow_html=True)
         st.markdown("<div style='font-size: 11px; color: #0F766E; font-weight: 600; margin: 4px 0;'>DSCR: 1.62x &nbsp;•&nbsp; Bounces: 0 &nbsp;•&nbsp; Gap: 5.2%</div>", unsafe_allow_html=True)
         st.caption("Deciding Signal: Clean banking, 0 mandate bounces, DSCR 1.62x, balanced ledger.")
         st.button(
@@ -59,7 +59,7 @@ with g_col2:
         st.markdown('<div style="font-size: 10px; font-weight: 700; color: #B91C1C; letter-spacing: 0.05em; text-transform: uppercase;">Archetype: Distressed Logistics</div>', unsafe_allow_html=True)
         c2_chip = f" &nbsp; {status_pill('ACTIVE', variant='info')}" if is_c2 else ""
         st.markdown(f"**2. Distressed**{c2_chip}", unsafe_allow_html=True)
-        st.markdown(f"**Kaveri Fictitious Freight (Demo)** &nbsp; {status_pill('REJECT', variant='reject')}", unsafe_allow_html=True)
+        st.markdown(f"**Kaveri Fictitious Freight (Demo)** &nbsp; {status_pill('REJECT', variant='reject') if is_corporate else status_pill('OFF', variant='neutral')}", unsafe_allow_html=True)
         st.markdown("<div style='font-size: 11px; color: #B91C1C; font-weight: 600; margin: 4px 0;'>DSCR: 0.82x &nbsp;•&nbsp; Bounces: 5 &nbsp;•&nbsp; Gap: 12.1%</div>", unsafe_allow_html=True)
         st.caption("Deciding Signal: 5 mandate bounces enforce hard policy knockout (BOUNCE_KNOCKOUT).")
         st.button(
@@ -78,7 +78,7 @@ with g_col3:
         st.markdown('<div style="font-size: 10px; font-weight: 700; color: #B45309; letter-spacing: 0.05em; text-transform: uppercase;">Archetype: High-Turnover Trader</div>', unsafe_allow_html=True)
         c3_chip = f" &nbsp; {status_pill('ACTIVE', variant='info')}" if is_c3 else ""
         st.markdown(f"**3. Mismatch Trap**{c3_chip}", unsafe_allow_html=True)
-        st.markdown(f"**Bharat Mock Steels & Infra (Demo)** &nbsp; {status_pill('CONDITIONAL', variant='conditional')}", unsafe_allow_html=True)
+        st.markdown(f"**Bharat Mock Steels & Infra (Demo)** &nbsp; {status_pill('CONDITIONAL', variant='conditional') if is_corporate else status_pill('OFF', variant='neutral')}", unsafe_allow_html=True)
         st.markdown("<div style='font-size: 11px; color: #B45309; font-weight: 600; margin: 4px 0;'>DSCR: 1.15x &nbsp;•&nbsp; Bounces: 1 &nbsp;•&nbsp; Gap: 24.5%</div>", unsafe_allow_html=True)
         st.caption("Deciding Signal: ₹14.5 Cr turnover vs thin ₹18L PAT triggers WEAKEST_LINK_CAP (< 40.0).")
         st.button(
@@ -118,14 +118,22 @@ with col_borrower:
     if is_corporate:
         # 1. ACTIVE CORPORATE VIEW (Crisp MCA-21 Dossier)
         with st.container(border=True):
-            st.markdown("#### :material/domain: Borrower Master Dossier (MCA-21)")
+            st.markdown(f"#### :material/domain: Borrower Master Dossier (MCA-21) &nbsp; {status_pill('ACTIVE', variant='approve')}", unsafe_allow_html=True)
             is_corp = st.toggle("Registered Corporate? (MCA CIN)", value=True, key="case_is_corporate")
 
             if is_corp != is_corporate:
                 st.session_state.active_is_corporate = is_corp
                 # Switch to unincorporated PAN to prevent ghost corporate error
-                if st.session_state.get("active_pan_input", "").strip().upper() == "AAACA1234B":
-                    st.session_state.active_pan_input = "AAAPA1234B"
+                curr_pan = st.session_state.get("case_pan_input", st.session_state.get("active_pan_input", "AAACA1234B")).strip().upper()
+                if not is_corp and len(curr_pan) == 10 and curr_pan[3] == "C":
+                    new_pan = curr_pan[:3] + "P" + curr_pan[4:]
+                elif is_corp and len(curr_pan) == 10 and curr_pan[3] in ["P", "F"]:
+                    new_pan = curr_pan[:3] + "C" + curr_pan[4:]
+                else:
+                    new_pan = "AAAPA1234B" if not is_corp else "AAACA1234B"
+                st.session_state.active_pan_input = new_pan
+                st.session_state.case_pan_input = new_pan
+                st.session_state["case_pan_input"] = new_pan
                 st.session_state.extracted_case = None
                 st.session_state.extraction_meta = None
                 st.session_state.hitl_confirmed = False
@@ -220,14 +228,22 @@ with col_borrower:
     else:
         # 2. PALE / DEACTIVATED VIEW (Dimmed Shell for Unincorporated MSME)
         with st.container(border=True):
-            st.markdown(f"#### :material/domain_disabled: Borrower Dossier &nbsp; {status_pill('MCA: DEACTIVATED', variant='neutral')}", unsafe_allow_html=True)
+            st.markdown(f"#### :material/domain_disabled: Borrower Dossier &nbsp; {status_pill('OFF', variant='neutral')} &nbsp; {status_pill('ON HOLD', variant='neutral')}", unsafe_allow_html=True)
             is_corp = st.toggle("Registered Corporate? (MCA CIN)", value=False, key="case_is_corporate")
 
             if is_corp != is_corporate:
                 st.session_state.active_is_corporate = is_corp
                 # Switch back to corporate PAN
-                if is_corp and st.session_state.get("active_pan_input", "").strip().upper() == "AAAPA1234B":
-                    st.session_state.active_pan_input = "AAACA1234B"
+                curr_pan = st.session_state.get("case_pan_input", st.session_state.get("active_pan_input", "AAAPA1234B")).strip().upper()
+                if is_corp and len(curr_pan) == 10 and curr_pan[3] in ["P", "F"]:
+                    new_pan = curr_pan[:3] + "C" + curr_pan[4:]
+                elif not is_corp and len(curr_pan) == 10 and curr_pan[3] == "C":
+                    new_pan = curr_pan[:3] + "P" + curr_pan[4:]
+                else:
+                    new_pan = "AAACA1234B" if is_corp else "AAAPA1234B"
+                st.session_state.active_pan_input = new_pan
+                st.session_state.case_pan_input = new_pan
+                st.session_state["case_pan_input"] = new_pan
                 st.session_state.extracted_case = None
                 st.session_state.extraction_meta = None
                 st.session_state.hitl_confirmed = False
@@ -246,73 +262,46 @@ with col_borrower:
                 st.session_state.lock_cleared_message = "Lock cleared because entity type changed."
                 st.rerun()
 
-            # Pale / Muted notification callout
-            st.markdown("""<div style="background: #F8FAFC; border: 1px dashed #94A3B8; border-radius: 6px; padding: 10px 14px; margin: 8px 0 12px 0;">
-                <div style="font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 3px;">
-                    MCA-21 Corporate Registry: Bypassed / Inactive
+            # Deactivated / On Hold View: Clean, muted, blanked-out state per institutional standards
+            _render_html(f"""<div style="background: #F8FAFC; border: 1.5px dashed #CBD5E1; border-radius: 8px; padding: 28px 16px; text-align: center; margin: 12px 0 16px 0;">
+                <div style="font-size: 26px; margin-bottom: 6px; color: #94A3B8;">⏸️</div>
+                <div style="font-size: 13px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">
+                    Borrower Dossier: On Hold
                 </div>
-                <div style="font-size: 12px; color: #64748B; line-height: 1.4;">
-                    Entity registration under Companies Act (MCA-21) is <strong>deactivated</strong>. Evaluating applicant under <strong>Unincorporated MSME / Sole Proprietorship</strong> guidelines via Udyam Aadhaar & promoter credit parameters.
+                <div style="font-size: 12px; color: #64748B; max-width: 380px; margin: 0 auto 14px auto; line-height: 1.45;">
+                    Corporate registry vetting (MCA-21) is <strong>turned off</strong>. Entity verification, automated RoC docket checks, and corporate profile parameters are suspended.
                 </div>
-            </div>""", unsafe_allow_html=True)
+                <div style="display: flex; justify-content: center; gap: 8px; flex-wrap: wrap;">
+                    {status_pill('STATUS: ON HOLD', variant='neutral')}
+                    {status_pill('MCA: OFF', variant='neutral')}
+                    {status_pill('VETTING: SUSPENDED', variant='neutral')}
+                </div>
+            </div>""")
 
-            st.selectbox("Industry Macro Sector", list(NIC_SECTOR_TAXONOMY.values()), index=0, key="case_manual_sector")
-            man_vin = st.slider("Promoter Business Vintage (Years)", min_value=1, max_value=60, value=int(st.session_state.get("case_manual_vintage", 7)), key="case_manual_vintage", help="Vintage in years since establishment")
-
-            pan_val = st.text_input("Promoter PAN (Individual / Firm)", value=ctx["pan_input"], key="case_pan_input")
-            if pan_val.strip().upper() != ctx["pan_input"].strip().upper():
-                st.session_state.active_pan_input = pan_val.strip().upper()
-                st.session_state.extracted_case = None
-                st.session_state.extraction_meta = None
-                st.session_state.hitl_confirmed = False
-                st.session_state.editable_df = None
-                st.session_state.original_df = None
-                st.session_state.locked_case = None
-                st.session_state.locked_financials_hash = None
-                st.session_state.scored_financials_hash = None
-                st.session_state.scored_composite_hash = None
-                st.session_state.score_result = None
-                st.session_state.officer_notes = []
-                st.session_state.executive_override = None
-                st.session_state.cam_markdown = None
-                st.session_state.current_research_report = None
-                st.session_state.last_research_cache_key = None
-                st.session_state.lock_cleared_message = "Lock cleared because PAN changed."
-                st.rerun()
-
-            if not pan_check.get("is_valid", False):
-                render_callout(pan_check.get("error", "Invalid PAN Format"), title="Invalid PAN Format", variant="error")
-            elif pan_check.get("mismatch_detected", False):
-                render_callout(pan_check.get("warning_message", ""), title="Consistency Alert", variant="error")
-            else:
-                render_callout(f"Promoter PAN verified: 4th character '{pan_check.get('pan_entity_char')}' matches {pan_check.get('pan_entity_type')}.", title="Entity Verified", variant="success")
-
-            # Pale, dimmed KPI cards (muted palette #F1F5F9, gray text #64748B)
+            # Muted Blank / On Hold KPI cards
             bcol1, bcol2 = st.columns(2)
             with bcol1:
-                st.markdown("""<div style="background: #F1F5F9; border: 1px dashed #CBD5E1; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px;">
-                    <div style="font-size: 11px; font-weight: 600; color: #94A3B8; text-transform: uppercase;">Entity Mode</div>
-                    <div style="font-size: 15px; font-weight: 700; color: #64748B; margin-top: 2px;">Unincorporated MSME</div>
-                    <div style="font-size: 11px; color: #94A3B8; margin-top: 2px;">MCA Bypassed</div>
-                </div>""", unsafe_allow_html=True)
-                st.markdown(f"""<div style="background: #F1F5F9; border: 1px dashed #CBD5E1; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px;">
-                    <div style="font-size: 11px; font-weight: 600; color: #94A3B8; text-transform: uppercase;">Operating Vintage</div>
-                    <div style="font-size: 15px; font-weight: 700; color: #64748B; margin-top: 2px;">{man_vin} Years</div>
-                    <div style="font-size: 11px; color: #94A3B8; margin-top: 2px;">Promoter Track Record</div>
-                </div>""", unsafe_allow_html=True)
+                _render_html(f"""<div style="background: #F8FAFC; border: 1px dashed #E2E8F0; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; text-align: center;">
+                    <div style="font-size: 10px; font-weight: 700; color: #94A3B8; text-transform: uppercase;">Entity Verification</div>
+                    <div style="font-size: 14px; font-weight: 700; color: #94A3B8; margin-top: 3px;">— ON HOLD —</div>
+                    <div style="font-size: 10px; color: #CBD5E1; margin-top: 2px;">Vetting Suspended</div>
+                </div>""")
+                _render_html(f"""<div style="background: #F8FAFC; border: 1px dashed #E2E8F0; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; text-align: center;">
+                    <div style="font-size: 10px; font-weight: 700; color: #94A3B8; text-transform: uppercase;">Operating Vintage</div>
+                    <div style="font-size: 14px; font-weight: 700; color: #94A3B8; margin-top: 3px;">— BLANK —</div>
+                    <div style="font-size: 10px; color: #CBD5E1; margin-top: 2px;">Not Evaluated</div>
+                </div>""")
             with bcol2:
-                man_sec = st.session_state.get("case_manual_sector", list(NIC_SECTOR_TAXONOMY.values())[0])
-                sec_short = man_sec[:22] + "..." if len(man_sec) > 22 else man_sec
-                st.markdown(f"""<div style="background: #F1F5F9; border: 1px dashed #CBD5E1; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px;">
-                    <div style="font-size: 11px; font-weight: 600; color: #94A3B8; text-transform: uppercase;">Industry Sector</div>
-                    <div style="font-size: 15px; font-weight: 700; color: #64748B; margin-top: 2px;">{sec_short}</div>
-                    <div style="font-size: 11px; color: #94A3B8; margin-top: 2px;">Udyam Category</div>
-                </div>""", unsafe_allow_html=True)
-                st.markdown("""<div style="background: #F1F5F9; border: 1px dashed #CBD5E1; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px;">
-                    <div style="font-size: 11px; font-weight: 600; color: #94A3B8; text-transform: uppercase;">Registration Base</div>
-                    <div style="font-size: 15px; font-weight: 700; color: #64748B; margin-top: 2px;">State Udyam Portal</div>
-                    <div style="font-size: 11px; color: #94A3B8; margin-top: 2px;">Non-RoC Filing</div>
-                </div>""", unsafe_allow_html=True)
+                _render_html(f"""<div style="background: #F8FAFC; border: 1px dashed #E2E8F0; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; text-align: center;">
+                    <div style="font-size: 10px; font-weight: 700; color: #94A3B8; text-transform: uppercase;">Industry Sector</div>
+                    <div style="font-size: 14px; font-weight: 700; color: #94A3B8; margin-top: 3px;">— BLANK —</div>
+                    <div style="font-size: 10px; color: #CBD5E1; margin-top: 2px;">Unassigned</div>
+                </div>""")
+                _render_html(f"""<div style="background: #F8FAFC; border: 1px dashed #E2E8F0; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; text-align: center;">
+                    <div style="font-size: 10px; font-weight: 700; color: #94A3B8; text-transform: uppercase;">RoC Registration</div>
+                    <div style="font-size: 14px; font-weight: 700; color: #94A3B8; margin-top: 3px;">— SUSPENDED —</div>
+                    <div style="font-size: 10px; color: #CBD5E1; margin-top: 2px;">MCA Bypassed</div>
+                </div>""")
 
 # RIGHT COLUMN: FACILITY TERMS & CAPITAL VISUALIZATION
 with col_facility:
@@ -417,7 +406,7 @@ with col_facility:
             xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
             yaxis=dict(showgrid=False, showticklabels=False),
         )
-        st.plotly_chart(fig_amort, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_amort, width="stretch", config={"displayModeBar": False})
 
         # 5. Visual Collateral Coverage Progress Meter
         req_l = float(st.session_state.facility_loan_amount)

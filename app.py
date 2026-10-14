@@ -144,6 +144,46 @@ st.markdown("""
         background-color: #F1F5F9 !important;
         color: #0F766E !important;
     }
+
+    /* Institutional Sidebar Ribbon Aesthetics */
+    section[data-testid="stSidebar"] {
+        background-color: #F8FAFC !important;
+        border-right: 1px solid #E2E8F0 !important;
+        box-shadow: 2px 0 12px rgba(15, 23, 42, 0.03) !important;
+    }
+    section[data-testid="stSidebar"] div[data-testid="stSidebarHeader"] {
+        padding-bottom: 0px !important;
+    }
+    section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] {
+        padding-top: 4px !important;
+        margin-bottom: 8px !important;
+    }
+    section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] a {
+        border-radius: 6px !important;
+        margin: 2px 4px !important;
+        padding: 6px 12px !important;
+        font-size: 13px !important;
+        font-weight: 500 !important;
+        color: #475569 !important;
+        transition: all 0.15s ease-in-out !important;
+    }
+    section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] a:hover {
+        background-color: #F1F5F9 !important;
+        color: #0F766E !important;
+    }
+    section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] a[aria-current="page"] {
+        background: linear-gradient(90deg, #0B1F3A 0%, #162C4E 100%) !important;
+        color: #FFFFFF !important;
+        font-weight: 700 !important;
+        box-shadow: 0 2px 6px rgba(11, 31, 58, 0.2) !important;
+    }
+    section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] a[aria-current="page"] span {
+        color: #FFFFFF !important;
+    }
+    section[data-testid="stSidebar"] hr {
+        margin: 10px 0 !important;
+        border-top: 1px solid #E2E8F0 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
