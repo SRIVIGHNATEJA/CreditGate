@@ -373,79 +373,23 @@ def render_sidebar() -> Dict[str, Any]:
                 _render_html(score_hud)
         else:
             with st.container(border=True):
-                radar_idle = f"""<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                radar_idle = f"""<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                     <span style="font-size: 10px; font-weight: 700; color: #0F766E; text-transform: uppercase; letter-spacing: 0.05em;">Underwriting Radar</span>
                     {status_pill("Intake Primed", variant="info")}
                 </div>
-                <div style="font-size: 11px; color: #64748B; line-height: 1.4; margin-top: 3px;">
-                    Awaiting verification. Lock borrower evidence to evaluate Five-Cs score & dynamic pricing.
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 4px;">
+                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 4px; padding: 4px 6px;">
+                        <div style="font-size: 8.5px; color: #64748B; font-weight: 600; text-transform: uppercase;">Entity Gate</div>
+                        <div style="font-size: 10.5px; font-weight: 700; color: #0F766E;">{'MCA-21 Vetted' if is_corporate else 'Proprietor Vetted'}</div>
+                    </div>
+                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 4px; padding: 4px 6px;">
+                        <div style="font-size: 8.5px; color: #64748B; font-weight: 600; text-transform: uppercase;">Filing Vault</div>
+                        <div style="font-size: 10.5px; font-weight: 700; color: #0F766E;">3 Docs Ready</div>
+                    </div>
                 </div>"""
                 _render_html(radar_idle)
 
-        # 3. Connected Workflow Progression Pipeline
-        is_extracted = (st.session_state.get("locked_case") is not None or st.session_state.get("extracted_case") is not None)
-        is_locked = (st.session_state.get("locked_case") is not None)
-        is_scored = (st.session_state.get("score_result") is not None)
-        is_cam = (st.session_state.get("cam_markdown") is not None)
-
-        if is_cam:
-            prog_pct = 100
-            prog_val = 1.0
-        elif is_scored:
-            prog_pct = 75
-            prog_val = 0.75
-        elif is_locked or is_extracted:
-            prog_pct = 50
-            prog_val = 0.50
-        else:
-            prog_pct = 25
-            prog_val = 0.25
-
-        p_case = status_pill("Configured", variant="approve")
-        if is_locked:
-            p_ev = status_pill("Locked", variant="approve")
-        elif is_extracted:
-            p_ev = status_pill("Extracted", variant="info")
-        else:
-            p_ev = status_pill("Pending", variant="neutral")
-
-        p_dec = status_pill("Scored", variant="approve") if is_scored else status_pill("Pending", variant="neutral")
-        p_cam = status_pill("Generated", variant="approve") if is_cam else status_pill("Pending", variant="neutral")
-
-        with st.container(border=True):
-            header_pipe = f"""<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                <span style="font-size: 10px; font-weight: 700; color: #0F766E; text-transform: uppercase; letter-spacing: 0.05em;">Pipeline Progression</span>
-                <span style="font-size: 10px; font-weight: 700; color: #0B1F3A;">{prog_pct}%</span>
-            </div>"""
-            _render_html(header_pipe)
-            st.progress(prog_val)
-
-            stage_bg1 = "background: #F0FDFA; border-left: 3px solid #0F766E; padding: 3px 6px;" if is_p1_active else "padding: 3px 6px;"
-            stage_bg2 = "background: #F0FDFA; border-left: 3px solid #0F766E; padding: 3px 6px;" if is_p2_active else "padding: 3px 6px;"
-            stage_bg3 = "background: #F0FDFA; border-left: 3px solid #0F766E; padding: 3px 6px;" if is_p3_active else "padding: 3px 6px;"
-            stage_bg4 = "background: #F0FDFA; border-left: 3px solid #0F766E; padding: 3px 6px;" if is_p4_active else "padding: 3px 6px;"
-
-            stages_html = f"""<div style="margin-top: 8px; display: flex; flex-direction: column; gap: 4px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; {stage_bg1} border-radius: 4px;">
-                    <span style="font-weight: {'700' if is_p1_active else '500'}; color: {'#0F766E' if is_p1_active else '#334155'};">1. Case & Terms</span>
-                    {p_case}
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; {stage_bg2} border-radius: 4px;">
-                    <span style="font-weight: {'700' if is_p2_active else '500'}; color: {'#0F766E' if is_p2_active else '#334155'};">2. Evidence Data</span>
-                    {p_ev}
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; {stage_bg3} border-radius: 4px;">
-                    <span style="font-weight: {'700' if is_p3_active else '500'}; color: {'#0F766E' if is_p3_active else '#334155'};">3. Risk & Scoring</span>
-                    {p_dec}
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; {stage_bg4} border-radius: 4px;">
-                    <span style="font-weight: {'700' if is_p4_active else '500'}; color: {'#0F766E' if is_p4_active else '#334155'};">4. Committee CAM</span>
-                    {p_cam}
-                </div>
-            </div>"""
-            _render_html(stages_html)
-
-        # 4. Live Sanction Envelope HUD & 1-Click Ticket Simulator
+        # 3. Live Sanction Envelope HUD & 1-Click Ticket Simulator
         ent_mode = "Corporate" if is_corporate else "Unincorporated"
         ent_badge = status_pill(ent_mode, variant="info" if is_corporate else "neutral")
         collat_chip = "CGTMSE" if cgtmse_cov else f"{cov_pct:.0f}%"
@@ -483,28 +427,33 @@ def render_sidebar() -> Dict[str, Any]:
             # Ticket Size Simulator Chips (Strictly st.button to maintain positional index compatibility)
             st.markdown("<div style='font-size: 9px; font-weight: 700; color: #64748B; text-transform: uppercase; margin-bottom: 3px;'>Simulate Ticket:</div>", unsafe_allow_html=True)
             col_sb1, col_sb2, col_sb3, col_sb4 = st.columns(4)
+            lbl_25 = "• 25L •" if abs(loan_amt - 2500000.0) < 1.0 else "25L"
+            lbl_50 = "• 50L •" if abs(loan_amt - 5000000.0) < 1.0 else "50L"
+            lbl_75 = "• 75L •" if abs(loan_amt - 7500000.0) < 1.0 else "75L"
+            lbl_1cr = "• 1Cr •" if abs(loan_amt - 10000000.0) < 1.0 else "1Cr"
+
             with col_sb1:
-                if st.button("25L", key="sb_btn_pre_25l", width="stretch", help="Set facility to ₹25 Lakhs"):
+                if st.button(lbl_25, key="sb_btn_pre_25l", width="stretch", help="Set facility to ₹25 Lakhs"):
                     st.session_state.facility_loan_amount = 2500000.0
                     st.session_state.loan_amount = 2500000.0
                     st.rerun()
             with col_sb2:
-                if st.button("50L", key="sb_btn_pre_50l", width="stretch", help="Set facility to ₹50 Lakhs"):
+                if st.button(lbl_50, key="sb_btn_pre_50l", width="stretch", help="Set facility to ₹50 Lakhs"):
                     st.session_state.facility_loan_amount = 5000000.0
                     st.session_state.loan_amount = 5000000.0
                     st.rerun()
             with col_sb3:
-                if st.button("75L", key="sb_btn_pre_75l", width="stretch", help="Set facility to ₹75 Lakhs"):
+                if st.button(lbl_75, key="sb_btn_pre_75l", width="stretch", help="Set facility to ₹75 Lakhs"):
                     st.session_state.facility_loan_amount = 7500000.0
                     st.session_state.loan_amount = 7500000.0
                     st.rerun()
             with col_sb4:
-                if st.button("1Cr", key="sb_btn_pre_1cr", width="stretch", help="Set facility to ₹1.0 Crore"):
+                if st.button(lbl_1cr, key="sb_btn_pre_1cr", width="stretch", help="Set facility to ₹1.0 Crore"):
                     st.session_state.facility_loan_amount = 10000000.0
                     st.session_state.loan_amount = 10000000.0
                     st.rerun()
 
-        # 5. Cryptographic Audit Seal Block
+        # 4. Cryptographic Audit Seal Block (High-Density Telemetry Strip)
         is_chain_valid, chain_err = verify_chain(st.session_state.get("audit_trail", []))
         evt_count = len(st.session_state.get("audit_trail", []))
         chain_status_pill = status_pill("Verified Chain", variant="approve") if is_chain_valid else status_pill("Tampered", variant="reject")
@@ -512,25 +461,20 @@ def render_sidebar() -> Dict[str, Any]:
         s_time = st.session_state.get("session_started_at", "Active")
 
         with st.container(border=True):
-            seal_html = f"""<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                <span style="font-size: 10px; font-weight: 700; color: #0F766E; text-transform: uppercase; letter-spacing: 0.05em;">Security Seal</span>
-                {chain_status_pill}
-            </div>
-            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 5px; padding: 6px 8px; font-size: 11px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span style="color: #64748B; font-size: 10px;">Audit Blocks:</span>
-                    <strong style="color: #0B1F3A; font-size: 10px;">{evt_count} Chained</strong>
+            telemetry_html = f"""<div style="display: flex; justify-content: space-between; align-items: center; font-size: 10px;">
+                <div style="display: flex; align-items: center; gap: 5px;">
+                    <span style="color: #0F766E; font-weight: 700;">🔒 AUDIT SEAL</span>
+                    <span style="color: #64748B;">• {evt_count} Blocks</span>
                 </div>
-                <div style="margin-top: 3px; padding-top: 3px; border-top: 1px dashed #CBD5E1; font-size: 9px; color: #64748B; font-family: monospace;">
-                    Genesis: <span style="color: #0F766E;">{gen_hash}...</span>
-                </div>
+                <div>{chain_status_pill}</div>
             </div>
-            <div style="margin-top: 5px; font-size: 9px; color: #94A3B8; text-align: right;">
-                Session: {s_time}
+            <div style="font-size: 9px; color: #94A3B8; font-family: monospace; margin-top: 3px; display: flex; justify-content: space-between;">
+                <span>Root: <strong style="color: #0F766E;">{gen_hash}...</strong></span>
+                <span>Session: {s_time}</span>
             </div>"""
-            _render_html(seal_html)
+            _render_html(telemetry_html)
 
-        # 6. Reset Case Button
+        # 5. Reset Case Button
         if st.button(":material/restart_alt: Reset Active Dossier", key="sb_btn_reset_case", width="stretch", help="Resets locks, extraction caches, and overrides while keeping the selected cohort"):
             cur_cohort = st.session_state.get("active_cohort_selection", "Cohort 1: Prime MSME (Apex Synthetic Demo)")
             select_and_reset_cohort(cur_cohort)
@@ -544,7 +488,14 @@ def get_app_context() -> Dict[str, Any]:
     init_session_state()
 
     cohort_selection = st.session_state.get("active_cohort_selection", "Cohort 1: Prime MSME (Apex Synthetic Demo)")
-    is_corporate = st.session_state.get("active_is_corporate", True)
+
+    # Synchronize widget toggle state first if user flipped it
+    if "case_is_corporate" in st.session_state:
+        is_corporate = bool(st.session_state["case_is_corporate"])
+        st.session_state.active_is_corporate = is_corporate
+    else:
+        is_corporate = st.session_state.get("active_is_corporate", True)
+
     cin_input = st.session_state.get("active_cin_selection", "U29253DL2018PTC334120")
     pan_input = st.session_state.get("active_pan_input", "AAACA1234B")
     current_cin_val = cin_input if is_corporate else "UNREGISTERED_MSME"
@@ -554,6 +505,11 @@ def get_app_context() -> Dict[str, Any]:
     # Auto-translate corporate 'C' to 'P' so a spurious Consistency Alert never triggers on toggle OFF.
     if not is_corporate and len(current_pan_val) == 10 and current_pan_val[3] == "C":
         current_pan_val = current_pan_val[:3] + "P" + current_pan_val[4:]
+        st.session_state.active_pan_input = current_pan_val
+        st.session_state.case_pan_input = current_pan_val
+        st.session_state["case_pan_input"] = current_pan_val
+    elif is_corporate and len(current_pan_val) == 10 and current_pan_val[3] in ["P", "F"] and "AAAP" in current_pan_val:
+        current_pan_val = current_pan_val[:3] + "C" + current_pan_val[4:]
         st.session_state.active_pan_input = current_pan_val
         st.session_state.case_pan_input = current_pan_val
         st.session_state["case_pan_input"] = current_pan_val

@@ -105,7 +105,7 @@ cohort_options = [
 ]
 active_cohort = st.session_state.get("active_cohort_selection", cohort_options[1])
 active_idx = cohort_options.index(active_cohort) if active_cohort in cohort_options else 1
-with st.expander("🛠️ Developer & Automated Testing Controls", expanded=False):
+with st.expander("🛠️ Controls", expanded=False):
     if "case_cohort_select" in st.session_state:
         selected_cohort = st.selectbox("Quick-Load Test Cohort", cohort_options, key="case_cohort_select")
     else:
@@ -183,7 +183,10 @@ with col_borrower:
 
             is_cin_valid, cin_err = validate_cin_syntax(cin_val)
             if not is_cin_valid:
-                render_callout(cin_err, title="Invalid CIN Format", variant="error")
+                if active_cohort == "None (Manual Upload)" and (not cin_val or cin_val == "UNREGISTERED_MSME"):
+                    render_callout("Awaiting manual corporate CIN specification or registry document upload.", title="Manual Intake Mode", variant="info")
+                else:
+                    render_callout(cin_err, title="Invalid CIN Format", variant="error")
             else:
                 render_callout(
                     f"MCA Valid: {cin_parsed_data['state_name']} | Vintage: {cin_parsed_data['business_vintage_years']} Years",
@@ -215,7 +218,10 @@ with col_borrower:
                 st.rerun()
 
             if not pan_check.get("is_valid", False):
-                render_callout(pan_check.get("error", "Invalid PAN Format"), title="Invalid PAN Format", variant="error")
+                if active_cohort == "None (Manual Upload)" and not pan_val.strip():
+                    render_callout("Awaiting manual PAN specification or financial extraction.", title="Manual Intake Mode", variant="info")
+                else:
+                    render_callout(pan_check.get("error", "Invalid PAN Format"), title="Invalid PAN Format", variant="error")
             elif pan_check.get("mismatch_detected", False):
                 render_callout(pan_check.get("warning_message", ""), title="Consistency Alert", variant="error")
             else:
@@ -236,7 +242,7 @@ with col_borrower:
     else:
         # 2. PALE / DEACTIVATED VIEW (Dimmed Shell for Unincorporated MSME)
         with st.container(border=True):
-            st.markdown(f"#### :material/domain_disabled: Borrower Dossier &nbsp; {status_pill('OFF', variant='neutral')} &nbsp; {status_pill('ON HOLD', variant='neutral')}", unsafe_allow_html=True)
+            st.markdown(f"#### :material/domain_disabled: Borrower Master Dossier &nbsp; {status_pill('OFF (MCA)', variant='neutral')} &nbsp; {status_pill('ON HOLD', variant='neutral')}", unsafe_allow_html=True)
             is_corp = st.toggle("Registered Corporate? (MCA CIN)", value=False, key="case_is_corporate")
 
             if is_corp != is_corporate:
@@ -270,46 +276,37 @@ with col_borrower:
                 st.session_state.lock_cleared_message = "Lock cleared because entity type changed."
                 st.rerun()
 
-            # Deactivated / On Hold View: Clean, muted, blanked-out state per institutional standards
-            _render_html(f"""<div style="background: #F8FAFC; border: 1.5px dashed #CBD5E1; border-radius: 8px; padding: 28px 16px; text-align: center; margin: 12px 0 16px 0;">
-                <div style="font-size: 26px; margin-bottom: 6px; color: #94A3B8;">⏸️</div>
-                <div style="font-size: 13px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">
-                    Borrower Dossier: On Hold
-                </div>
-                <div style="font-size: 12px; color: #64748B; max-width: 380px; margin: 0 auto 14px auto; line-height: 1.45;">
-                    Corporate registry vetting (MCA-21) is <strong>turned off</strong>. Entity verification, automated RoC docket checks, and corporate profile parameters are suspended.
-                </div>
-                <div style="display: flex; justify-content: center; gap: 8px; flex-wrap: wrap;">
-                    {status_pill('STATUS: ON HOLD', variant='neutral')}
-                    {status_pill('MCA: OFF', variant='neutral')}
-                    {status_pill('VETTING: SUSPENDED', variant='neutral')}
-                </div>
-            </div>""")
+            pan_val = st.text_input("Proprietor / Entity PAN", value=ctx["pan_input"], key="case_pan_input")
+            if pan_val.strip().upper() != ctx["pan_input"].strip().upper():
+                st.session_state.active_pan_input = pan_val.strip().upper()
+                st.session_state.extracted_case = None
+                st.session_state.extraction_meta = None
+                st.session_state.hitl_confirmed = False
+                st.session_state.editable_df = None
+                st.session_state.original_df = None
+                st.session_state.locked_case = None
+                st.session_state.locked_financials_hash = None
+                st.session_state.scored_financials_hash = None
+                st.session_state.scored_composite_hash = None
+                st.session_state.score_result = None
+                st.session_state.officer_notes = []
+                st.session_state.executive_override = None
+                st.session_state.cam_markdown = None
+                st.session_state.current_research_report = None
+                st.session_state.last_research_cache_key = None
+                st.session_state.lock_cleared_message = "Lock cleared because PAN changed."
+                st.rerun()
 
-            # Muted Blank / On Hold KPI cards
+            render_callout("Corporate registry vetting (MCA-21) is turned OFF. Entity verification and RoC corporate docket checks are on hold.", title="Corporate Vetting On Hold", variant="neutral")
+
+            # Muted Blank / On Hold KPI cards using native component
             bcol1, bcol2 = st.columns(2)
             with bcol1:
-                _render_html(f"""<div style="background: #F8FAFC; border: 1px dashed #E2E8F0; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; text-align: center;">
-                    <div style="font-size: 10px; font-weight: 700; color: #94A3B8; text-transform: uppercase;">Entity Verification</div>
-                    <div style="font-size: 14px; font-weight: 700; color: #94A3B8; margin-top: 3px;">— ON HOLD —</div>
-                    <div style="font-size: 10px; color: #CBD5E1; margin-top: 2px;">Vetting Suspended</div>
-                </div>""")
-                _render_html(f"""<div style="background: #F8FAFC; border: 1px dashed #E2E8F0; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; text-align: center;">
-                    <div style="font-size: 10px; font-weight: 700; color: #94A3B8; text-transform: uppercase;">Operating Vintage</div>
-                    <div style="font-size: 14px; font-weight: 700; color: #94A3B8; margin-top: 3px;">— BLANK —</div>
-                    <div style="font-size: 10px; color: #CBD5E1; margin-top: 2px;">Not Evaluated</div>
-                </div>""")
+                render_kpi_card("Entity Verification", "— ON HOLD —", subtext="Vetting Suspended")
+                render_kpi_card("Operating Vintage", "— BLANK —", subtext="Not Evaluated")
             with bcol2:
-                _render_html(f"""<div style="background: #F8FAFC; border: 1px dashed #E2E8F0; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; text-align: center;">
-                    <div style="font-size: 10px; font-weight: 700; color: #94A3B8; text-transform: uppercase;">Industry Sector</div>
-                    <div style="font-size: 14px; font-weight: 700; color: #94A3B8; margin-top: 3px;">— BLANK —</div>
-                    <div style="font-size: 10px; color: #CBD5E1; margin-top: 2px;">Unassigned</div>
-                </div>""")
-                _render_html(f"""<div style="background: #F8FAFC; border: 1px dashed #E2E8F0; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; text-align: center;">
-                    <div style="font-size: 10px; font-weight: 700; color: #94A3B8; text-transform: uppercase;">RoC Registration</div>
-                    <div style="font-size: 14px; font-weight: 700; color: #94A3B8; margin-top: 3px;">— SUSPENDED —</div>
-                    <div style="font-size: 10px; color: #CBD5E1; margin-top: 2px;">MCA Bypassed</div>
-                </div>""")
+                render_kpi_card("Industry Sector", "— BLANK —", subtext="Unassigned")
+                render_kpi_card("RoC Registration", "— SUSPENDED —", subtext="MCA Bypassed")
 
 # RIGHT COLUMN: FACILITY TERMS & CAPITAL VISUALIZATION
 with col_facility:
@@ -423,44 +420,7 @@ with col_facility:
                 tooltip=f"Cumulative interest cost over {n_int} months",
             )
 
-        # 4. Interactive Capital Outflow Visualizer (Plotly Horizontal Breakdown)
-        import plotly.graph_objects as go
-        fig_amort = go.Figure()
-        fig_amort.add_trace(go.Bar(
-            y=["Capital Split"],
-            x=[float(P_dec)],
-            name=f"Principal ({pct_p:.1f}%)",
-            orientation="h",
-            marker=dict(color="#0F766E"),
-            text=f"Principal: ₹{float(P_dec)/100000:.1f}L ({pct_p:.1f}%)",
-            textposition="inside",
-            insidetextanchor="middle",
-            hoverinfo="text",
-        ))
-        fig_amort.add_trace(go.Bar(
-            y=["Capital Split"],
-            x=[float(total_interest_cost)],
-            name=f"Interest Cost ({pct_i:.1f}%)",
-            orientation="h",
-            marker=dict(color="#64748B"),
-            text=f"Interest: ₹{float(total_interest_cost)/100000:.1f}L ({pct_i:.1f}%)",
-            textposition="inside",
-            insidetextanchor="middle",
-            hoverinfo="text",
-        ))
-        fig_amort.update_layout(
-            barmode="stack",
-            height=54,
-            margin=dict(l=0, r=0, t=4, b=4),
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            showlegend=False,
-            xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
-            yaxis=dict(showgrid=False, showticklabels=False),
-        )
-        st.plotly_chart(fig_amort, width="stretch", config={"displayModeBar": False})
-
-        # 5. Visual Collateral Coverage Progress Meter
+        # 4. Visual Collateral Coverage Progress Meter
         req_l = float(st.session_state.facility_loan_amount)
         pled_c = float(st.session_state.facility_collateral_val)
         cov_pct = (pled_c / req_l * 100.0) if req_l > 0 else 0.0
@@ -479,26 +439,32 @@ with col_facility:
         </div>"""
         _render_html(cov_meter_html)
 
-        # 6. Smart 1-Click Scenario & Policy Alignment Controls
+        # 5. Smart 1-Click Scenario & Policy Alignment Controls
         st.markdown("<div style='font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; margin: 4px 0 2px 0;'>1-Click Facility Presets:</div>", unsafe_allow_html=True)
+        curr_l = float(st.session_state.facility_loan_amount)
+        p25 = abs(curr_l - 2500000.0) < 1.0
+        p50 = abs(curr_l - 5000000.0) < 1.0
+        p75 = abs(curr_l - 7500000.0) < 1.0
+        p1cr = abs(curr_l - 10000000.0) < 1.0
+
         col_ps1, col_ps2, col_ps3, col_ps4 = st.columns(4)
         with col_ps1:
-            if st.button("₹25L", key="btn_pre_25l", width="stretch", help="Set facility to ₹25 Lakhs (Micro-Enterprise)"):
+            if st.button("• ₹25L •" if p25 else "₹25L", key="btn_pre_25l", width="stretch", type="primary" if p25 else "secondary", help="Set facility to ₹25 Lakhs (Micro-Enterprise)"):
                 st.session_state.facility_loan_amount = 2500000.0
                 st.session_state.loan_amount = 2500000.0
                 st.rerun()
         with col_ps2:
-            if st.button("₹50L", key="btn_pre_50l", width="stretch", help="Set facility to ₹50 Lakhs (Standard Term Loan)"):
+            if st.button("• ₹50L •" if p50 else "₹50L", key="btn_pre_50l", width="stretch", type="primary" if p50 else "secondary", help="Set facility to ₹50 Lakhs (Standard Term Loan)"):
                 st.session_state.facility_loan_amount = 5000000.0
                 st.session_state.loan_amount = 5000000.0
                 st.rerun()
         with col_ps3:
-            if st.button("₹75L", key="btn_pre_75l", width="stretch", help="Set facility to ₹75 Lakhs (Growth Capital)"):
+            if st.button("• ₹75L •" if p75 else "₹75L", key="btn_pre_75l", width="stretch", type="primary" if p75 else "secondary", help="Set facility to ₹75 Lakhs (Growth Capital)"):
                 st.session_state.facility_loan_amount = 7500000.0
                 st.session_state.loan_amount = 7500000.0
                 st.rerun()
         with col_ps4:
-            if st.button("₹1.0Cr", key="btn_pre_1cr", width="stretch", help="Set facility to ₹1.00 Crore (Syndicate Limit)"):
+            if st.button("• ₹1.0Cr •" if p1cr else "₹1.0Cr", key="btn_pre_1cr", width="stretch", type="primary" if p1cr else "secondary", help="Set facility to ₹1.00 Crore (Syndicate Limit)"):
                 st.session_state.facility_loan_amount = 10000000.0
                 st.session_state.loan_amount = 10000000.0
                 st.rerun()

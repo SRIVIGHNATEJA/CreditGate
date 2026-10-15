@@ -461,14 +461,88 @@ if res is not None:
             render_callout("Applicant scored 100.0/100 across all evaluated parameters with zero deductions.", title="Zero Deductions", variant="success")
 
         # --------------------------------------------------------------------
+        # 5. DEBT SERVICE CAPACITY & CAPITAL AMORTIZATION ARCHITECTURE
+        # --------------------------------------------------------------------
+        with st.container(border=True):
+            st.markdown("#### :material/account_balance: Debt Service Capacity & Capital Amortization Architecture")
+            st.caption("Deterministic cash outflow modeling under approved facility terms with Principal vs Interest split.")
+
+            from core.analyser import calculate_monthly_emi
+            P_dec = Decimal(str(loan_amount))
+            r_dec = Decimal(str(interest_rate))
+            n_int = int(tenure_months)
+
+            live_emi = calculate_monthly_emi(P_dec, r_dec, n_int)
+            total_repayment = live_emi * Decimal(str(n_int))
+            total_interest_cost = total_repayment - P_dec
+            pct_p = float(P_dec / total_repayment * Decimal("100")) if total_repayment > 0 else 100.0
+            pct_i = float(total_interest_cost / total_repayment * Decimal("100")) if total_repayment > 0 else 0.0
+
+            d_col1, d_col2, d_col3, d_col4 = st.columns(4)
+            with d_col1:
+                render_kpi_card("Sanction Facility", f"₹ {float(P_dec)/100000:.1f} Lakhs", subtext=format_inr(P_dec))
+            with d_col2:
+                render_kpi_card("Lending Rate", f"{float(r_dec):.2f}% p.a.", subtext=f"{n_int}M Tenor ({n_int//12} Yrs)")
+            with d_col3:
+                render_kpi_card("Monthly EMI Outflow", format_inr(live_emi), subtext="Annuity Obligation")
+            with d_col4:
+                render_kpi_card("Total Interest Cost", format_inr(total_interest_cost), subtext=f"{pct_i:.1f}% Cost of Capital")
+
+            fig_amort = go.Figure()
+            fig_amort.add_trace(go.Bar(
+                y=["Capital Outflow"],
+                x=[float(P_dec)],
+                name=f"Principal ({pct_p:.1f}%)",
+                orientation="h",
+                marker=dict(color="#0F766E"),
+                text=f"Principal: ₹{float(P_dec)/100000:.1f}L ({pct_p:.1f}%)",
+                textposition="inside",
+                insidetextanchor="middle",
+                hoverinfo="text",
+            ))
+            fig_amort.add_trace(go.Bar(
+                y=["Capital Outflow"],
+                x=[float(total_interest_cost)],
+                name=f"Interest Cost ({pct_i:.1f}%)",
+                orientation="h",
+                marker=dict(color="#64748B"),
+                text=f"Interest: ₹{float(total_interest_cost)/100000:.1f}L ({pct_i:.1f}%)",
+                textposition="inside",
+                insidetextanchor="middle",
+                hoverinfo="text",
+            ))
+            fig_amort.update_layout(
+                barmode="stack",
+                height=56,
+                margin=dict(l=0, r=0, t=4, b=4),
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                showlegend=False,
+                xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
+                yaxis=dict(showgrid=False, showticklabels=False),
+            )
+            st.plotly_chart(fig_amort, width="stretch", config={"displayModeBar": False})
+
+        # --------------------------------------------------------------------
         # 6. ALL-INDIA FORENSIC LEGAL SURVEILLANCE & ADVERSE MEDIA RADAR
         # --------------------------------------------------------------------
         st.markdown("---")
         st.markdown("#### :material/shield_search: All-India Forensic Legal Surveillance & Adverse Media Radar")
         st.caption("Live statutory intelligence triangulation across 672 District Courts, 16 NCLT Benches, MCA-21, IBBI, and DRT Recovery Registries.")
 
-        # 5-Court Telemetry Radar HUD
-        telemetry_html = """<div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 10px 0 14px 0;">
+        active_cin = cin_parsed_data["cin"] if cin_parsed_data else "UNREGISTERED_MSME"
+        is_corp_entity = bool(active_cin and active_cin != "UNREGISTERED_MSME")
+        company_nm = (
+            st.session_state.locked_case.company_name
+            if st.session_state.locked_case
+            else COHORT_COMPANY_NAMES.get(cohort_selection, "Manual Applicant Company")
+        )
+        anchored_query = build_search_query(company_nm, cin=active_cin if is_corp_entity else None)
+
+        is_demo_cohort = bool(cohort_selection and cohort_selection != "None (Manual Upload)")
+
+        # 5-Court Telemetry Radar HUD (High-Density Multi-Registry Grid)
+        telemetry_html = f"""<div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 10px 0 14px 0;">
             <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-top: 3px solid #0F766E; border-radius: 6px; padding: 8px 10px;">
                 <div style="font-size: 10px; font-weight: 700; color: #0F766E; text-transform: uppercase;">🏛️ e-Courts NJDG</div>
                 <div style="font-size: 11px; font-weight: 700; color: #0B1F3A; margin-top: 2px;">672 Dist & High Courts</div>
@@ -481,8 +555,8 @@ if res is not None:
             </div>
             <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-top: 3px solid #0F766E; border-radius: 6px; padding: 8px 10px;">
                 <div style="font-size: 10px; font-weight: 700; color: #0F766E; text-transform: uppercase;">🏢 MCA-21 Portal</div>
-                <div style="font-size: 11px; font-weight: 700; color: #0B1F3A; margin-top: 2px;">RoC Defaults & DIN</div>
-                <div style="font-size: 9px; color: #10B981; font-weight: 600; margin-top: 2px;">● DEFAULTS VERIFIED</div>
+                <div style="font-size: 11px; font-weight: 700; color: #0B1F3A; margin-top: 2px;">{'RoC Defaults & DIN' if is_corp_entity else 'Non-Corp (Exempt)'}</div>
+                <div style="font-size: 9px; color: #10B981; font-weight: 600; margin-top: 2px;">● {'DEFAULTS VERIFIED' if is_corp_entity else 'REGISTRY BYPASS'}</div>
             </div>
             <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-top: 3px solid #0F766E; border-radius: 6px; padding: 8px 10px;">
                 <div style="font-size: 10px; font-weight: 700; color: #0F766E; text-transform: uppercase;">📜 IBBI Registry</div>
@@ -497,24 +571,23 @@ if res is not None:
         </div>"""
         _render_html(telemetry_html)
 
-        active_cin = cin_parsed_data["cin"] if cin_parsed_data else "UNREGISTERED_MSME"
-        company_nm = (
-            st.session_state.locked_case.company_name
-            if st.session_state.locked_case
-            else COHORT_COMPANY_NAMES.get(cohort_selection, "Manual Applicant Company")
-        )
-        anchored_query = build_search_query(company_nm, cin=active_cin)
-
-        is_demo_cohort = bool(cohort_selection and cohort_selection != "None (Manual Upload)")
-
         # Anchored Target Command Console (Light Institutional Design)
+        if is_corp_entity:
+            anchor_token_badge = f'<span style="color: #0F766E; font-family: monospace; font-weight: 600; background: #CCFBF1; border: 1px solid #99F6E4; padding: 2px 7px; border-radius: 4px;">CIN: {active_cin}</span>'
+            anchor_clause_html = f'<span style="color: #0F766E; font-weight: 700;">"{company_nm}"</span> <span style="color: #DC2626; font-weight: 700;">AND</span> <span style="color: #2563EB; font-weight: 700;">"{active_cin}"</span>'
+            anchor_mode_tag = "CIN Strict Match"
+        else:
+            anchor_token_badge = f'<span style="color: #0F766E; font-family: monospace; font-weight: 600; background: #CCFBF1; border: 1px solid #99F6E4; padding: 2px 7px; border-radius: 4px;">PAN: {current_pan_val} (Unincorporated)</span>'
+            anchor_clause_html = f'<span style="color: #0F766E; font-weight: 700;">"{company_nm}"</span> <span style="color: #DC2626; font-weight: 700;">AND</span> <span style="color: #2563EB; font-weight: 700;">"{current_pan_val}"</span>'
+            anchor_mode_tag = "PAN Anchor"
+
         command_deck_html = f"""<div style="background: #FFFFFF; border: 1px solid #CBD5E1; border-top: 3px solid #0F766E; border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);">
             <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
                 <div>
                     <div style="font-size: 10px; font-weight: 700; color: #0F766E; text-transform: uppercase; letter-spacing: 0.05em;">Surveillance Target Identity</div>
                     <div style="font-size: 15px; font-weight: 800; color: #0B1F3A; margin-top: 2px;">{company_nm}</div>
                     <div style="display: flex; gap: 8px; margin-top: 5px; font-size: 11px;">
-                        <span style="color: #0F766E; font-family: monospace; font-weight: 600; background: #CCFBF1; border: 1px solid #99F6E4; padding: 2px 7px; border-radius: 4px;">CIN: {active_cin}</span>
+                        {anchor_token_badge}
                         <span style="color: #334155; font-family: monospace; font-weight: 600; background: #F1F5F9; border: 1px solid #E2E8F0; padding: 2px 7px; border-radius: 4px;">PAN: {current_pan_val}</span>
                     </div>
                 </div>
@@ -527,9 +600,9 @@ if res is not None:
             </div>
             <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 5px; padding: 8px 12px; font-family: monospace; font-size: 11px; color: #334155; display: flex; justify-content: space-between; align-items: center; overflow-x: auto;">
                 <div>
-                    <span style="color: #D97706; font-weight: 700;">ANCHOR_QUERY</span> &gt;&gt; <span style="color: #0F766E; font-weight: 700;">"{company_nm}"</span> <span style="color: #DC2626; font-weight: 700;">AND</span> <span style="color: #2563EB; font-weight: 700;">"{active_cin}"</span>
+                    <span style="color: #D97706; font-weight: 700;">ANCHOR_QUERY</span> &gt;&gt; {anchor_clause_html}
                 </div>
-                <span style="font-size: 9px; color: #64748B; font-family: sans-serif; background: #E2E8F0; padding: 1px 6px; border-radius: 3px;">CIN Strict Match</span>
+                <span style="font-size: 9px; color: #64748B; font-family: sans-serif; background: #E2E8F0; padding: 1px 6px; border-radius: 3px;">{anchor_mode_tag}</span>
             </div>
         </div>"""
         _render_html(command_deck_html)
@@ -693,6 +766,21 @@ if res is not None:
 
                         if f.review_status == ReviewStatus.UNREVIEWED:
                             st.markdown("##### Officer Legal Determination (Inline Action)")
+                            st.markdown("<div style='font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; margin-bottom: 4px;'>1-Click Legal Citations:</div>", unsafe_allow_html=True)
+                            chip_col1, chip_col2, chip_col3 = st.columns(3)
+                            with chip_col1:
+                                if st.button("⚖️ Admitted CIRP", key=f"btn_chip_cirp_{f.id}", width="stretch", help="Set citation: Admitted CIRP order verified via NCLT registry"):
+                                    st.session_state[f"inline_note_{f.id}"] = "Admitted CIRP order verified via NCLT registry"
+                                    st.rerun()
+                            with chip_col2:
+                                if st.button("🏢 Homonym Collision", key=f"btn_chip_homo_{f.id}", width="stretch", help="Set reason: Homonym collision: Unrelated entity with distinct CIN/PAN"):
+                                    st.session_state[f"inline_note_{f.id}"] = "Homonym collision: Unrelated entity with distinct CIN/PAN"
+                                    st.rerun()
+                            with chip_col3:
+                                if st.button("📜 Stay / Dismissed", key=f"btn_chip_stay_{f.id}", width="stretch", help="Set reason: Commercial suit dismissed with prejudice"):
+                                    st.session_state[f"inline_note_{f.id}"] = "Commercial recovery suit was dismissed with prejudice"
+                                    st.rerun()
+
                             note_val = st.text_input("Order Citation / Dismissal Reason (Required)", key=f"inline_note_{f.id}", placeholder="e.g. NCLT Order CP(IB)/102/2026 or Homonym entity collision")
                             st.caption(f"Citation/Reason Length: {len(note_val.strip())}/10 characters minimum")
                             c_act1, c_act2 = st.columns(2)
