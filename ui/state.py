@@ -371,6 +371,16 @@ def render_sidebar() -> Dict[str, Any]:
                     </div>
                 </div>"""
                 _render_html(score_hud)
+        else:
+            with st.container(border=True):
+                radar_idle = f"""<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <span style="font-size: 10px; font-weight: 700; color: #0F766E; text-transform: uppercase; letter-spacing: 0.05em;">Underwriting Radar</span>
+                    {status_pill("Intake Primed", variant="info")}
+                </div>
+                <div style="font-size: 11px; color: #64748B; line-height: 1.4; margin-top: 3px;">
+                    Awaiting verification. Lock borrower evidence to evaluate Five-Cs score & dynamic pricing.
+                </div>"""
+                _render_html(radar_idle)
 
         # 3. Connected Workflow Progression Pipeline
         is_extracted = (st.session_state.get("locked_case") is not None or st.session_state.get("extracted_case") is not None)
@@ -439,13 +449,14 @@ def render_sidebar() -> Dict[str, Any]:
         ent_mode = "Corporate" if is_corporate else "Unincorporated"
         ent_badge = status_pill(ent_mode, variant="info" if is_corporate else "neutral")
         collat_chip = "CGTMSE" if cgtmse_cov else f"{cov_pct:.0f}%"
+        annual_debt_serv = emi_dec * Decimal("12")
 
         with st.container(border=True):
             terms_html = f"""<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                 <span style="font-size: 10px; font-weight: 700; color: #0F766E; text-transform: uppercase; letter-spacing: 0.05em;">Sanction Terms</span>
                 {ent_badge}
             </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 8px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 6px;">
                 <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 5px; padding: 5px 8px;">
                     <div style="font-size: 9px; font-weight: 600; color: #94A3B8; text-transform: uppercase;">Facility</div>
                     <div style="font-size: 12px; font-weight: 700; color: #0B1F3A;">₹ {loan_amt/100000:.1f}L</div>
@@ -462,6 +473,10 @@ def render_sidebar() -> Dict[str, Any]:
                     <div style="font-size: 9px; font-weight: 600; color: #94A3B8; text-transform: uppercase;">Security</div>
                     <div style="font-size: 11px; font-weight: 700; color: #0F766E;">{collat_chip}</div>
                 </div>
+            </div>
+            <div style="background: #F8FAFC; border: 1px dashed #CBD5E1; border-radius: 4px; padding: 3px 6px; font-size: 10px; color: #64748B; display: flex; justify-content: space-between; margin-bottom: 6px;">
+                <span>Annual Outflow:</span>
+                <strong style="color: #0B1F3A;">{format_inr(annual_debt_serv)}</strong>
             </div>"""
             _render_html(terms_html)
 

@@ -4,6 +4,7 @@ from ui.state import get_app_context, record_event, select_and_reset_cohort
 from ui.components import render_kpi_card, render_callout, status_pill, _render_html
 from core.formatting import format_inr
 from core.onboarding import validate_cin_syntax, parse_cin, check_entity_consistency, NIC_SECTOR_TAXONOMY
+from core.policy import Verdict
 
 st.session_state.current_page = "Case"
 ctx = get_app_context()
@@ -21,8 +22,14 @@ cohort_selection = ctx["cohort_selection"]
 st.markdown("### Case Gallery & Applicant Profile")
 st.caption("Select a pre-configured synthetic underwriting scenario or review active borrower onboarding parameters.")
 
-if st.session_state.get("lock_cleared_message"):
-    render_callout(st.session_state.lock_cleared_message, title="Lock Status Alert", variant="warning")
+msg = st.session_state.get("lock_cleared_message")
+if msg:
+    if st.session_state.get("_toast_shown_for") == msg:
+        st.session_state.lock_cleared_message = None
+        st.session_state._toast_shown_for = None
+    else:
+        st.toast(msg, icon="🔄")
+        st.session_state._toast_shown_for = msg
 
 # ----------------------------------------------------------------------------
 # 1. CASE GALLERY (LANDING VIEW: 3 CARDS + COHORT SELECTOR)
@@ -98,13 +105,14 @@ cohort_options = [
 ]
 active_cohort = st.session_state.get("active_cohort_selection", cohort_options[1])
 active_idx = cohort_options.index(active_cohort) if active_cohort in cohort_options else 1
-if "case_cohort_select" in st.session_state:
-    selected_cohort = st.selectbox("Quick-Load Test Cohort", cohort_options, key="case_cohort_select")
-else:
-    selected_cohort = st.selectbox("Quick-Load Test Cohort", cohort_options, index=active_idx, key="case_cohort_select")
-if selected_cohort != active_cohort:
-    select_and_reset_cohort(selected_cohort)
-    st.rerun()
+with st.expander("🛠️ Developer & Automated Testing Controls", expanded=False):
+    if "case_cohort_select" in st.session_state:
+        selected_cohort = st.selectbox("Quick-Load Test Cohort", cohort_options, key="case_cohort_select")
+    else:
+        selected_cohort = st.selectbox("Quick-Load Test Cohort", cohort_options, index=active_idx, key="case_cohort_select")
+    if selected_cohort != active_cohort:
+        select_and_reset_cohort(selected_cohort)
+        st.rerun()
 
 st.markdown("---")
 
@@ -309,30 +317,68 @@ with col_facility:
         st.markdown("#### :material/account_balance: Facility Term Sheet & Risk-Based Pricing")
         st.caption("Autonomous risk-based loan facility configuration with RBI repo benchmark spread alignment.")
 
-        # 1. Bank Policy Pricing Context
-        is_large_ticket = float(st.session_state.facility_loan_amount) > 10000000.0
-        base_spread = 3.75 if is_c1 else (7.25 if is_c2 else 5.00)
-        spread_tier_add = 0.50 if is_large_ticket else 0.0
-        effective_spread = base_spread + spread_tier_add
-        policy_tier_name = "Tier-1 Prime" if is_c1 else ("Tier-3 Stressed" if is_c2 else "Tier-2 Moderate")
-        if is_large_ticket:
-            policy_tier_name += " (Large Ticket +0.50%)"
-        benchmark_rate = 6.50 + effective_spread
+        # 1. Bank Policy Pricing Context (Unbiased Real-Time Dynamic Engine)
+        score_res = st.session_state.get("score_result")
         curr_rate = float(st.session_state.facility_interest_rate)
-        delta_rate = curr_rate - benchmark_rate
-        if abs(delta_rate) < 0.01:
-            concession_chip = status_pill("Policy Standard", variant="approve")
-        elif delta_rate < 0:
-            concession_chip = status_pill(f"Concession: {delta_rate:.2f}%", variant="info")
-        else:
-            concession_chip = status_pill(f"Risk Surcharge: +{delta_rate:.2f}%", variant="conditional")
+        is_large_ticket = float(st.session_state.facility_loan_amount) > 10000000.0
 
-        pricing_badge = f"""<div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid #0F766E; border-radius: 6px; padding: 10px 14px; margin: 6px 0 12px 0; font-size: 12px; color: #1E293B; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-            <div>
-                <strong>Bank Policy Benchmark:</strong> RBI Repo (6.50%) + {effective_spread:.2f}% ({policy_tier_name}) = <strong>{benchmark_rate:.2f}% p.a.</strong>
-            </div>
-            <div>{concession_chip}</div>
-        </div>"""
+        if score_res is None or score_res.final_verdict == Verdict.INSUFFICIENT_DATA:
+            # Phase 1: Pre-Appraisal Intake Benchmark (Objective Standard Policy)
+            benchmark_rate = 11.50
+            delta_rate = curr_rate - benchmark_rate
+            if abs(delta_rate) < 0.01:
+                concession_chip = status_pill("Base Standard", variant="approve")
+            elif delta_rate < 0:
+                concession_chip = status_pill(f"Concession: {delta_rate:.2f}%", variant="info")
+            else:
+                concession_chip = status_pill(f"Margin: +{delta_rate:.2f}%", variant="neutral")
+
+            pricing_badge = f"""<div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid #0F766E; border-radius: 6px; padding: 10px 14px; margin: 6px 0 12px 0; font-size: 12px; color: #1E293B; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                <div>
+                    <strong>Indicative Base Benchmark:</strong> RBI Repo (6.50%) + Base MSME Spread (5.00%) = <strong>11.50% p.a.</strong>
+                    <div style="font-size: 10px; color: #64748B; margin-top: 2px;">
+                        Pre-Appraisal Intake: Risk-adjusted spread will be derived dynamically upon completing Stage 3 (Five-Cs Scoring).
+                    </div>
+                </div>
+                <div>{concession_chip}</div>
+            </div>"""
+        else:
+            # Phase 2: Post-Appraisal Real-Time Risk-Derived Pricing
+            comp_score = float(score_res.composite_score)
+            dscr_val = float(score_res.dscr)
+            bounces = (st.session_state.locked_case.bank_data.bounce_count or 0) if (st.session_state.locked_case and st.session_state.locked_case.bank_data) else 0
+
+            if comp_score >= 75.0:
+                derived_spread = 3.75
+                risk_tier_name = "Prime Tier-1 (Score ≥ 75)"
+            elif comp_score >= 60.0:
+                derived_spread = 5.00
+                risk_tier_name = "Moderate Tier-2 (Score 60-74)"
+            else:
+                derived_spread = 7.25
+                risk_tier_name = "Stressed Tier-3 (Score < 60)"
+
+            conduct_premium = 0.50 if bounces > 2 else 0.0
+            ticket_premium = 0.50 if is_large_ticket else 0.0
+            benchmark_rate = 6.50 + derived_spread + conduct_premium + ticket_premium
+            delta_rate = curr_rate - benchmark_rate
+
+            if abs(delta_rate) < 0.01:
+                concession_chip = status_pill("Risk Aligned", variant="approve")
+            elif delta_rate < 0:
+                concession_chip = status_pill(f"Concession: {delta_rate:.2f}%", variant="info")
+            else:
+                concession_chip = status_pill(f"Risk Premium: +{delta_rate:.2f}%", variant="conditional")
+
+            pricing_badge = f"""<div style="background: #F0FDF4; border: 1px solid #BBF7D0; border-left: 3px solid #16A34A; border-radius: 6px; padding: 10px 14px; margin: 6px 0 12px 0; font-size: 12px; color: #14532D; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                <div>
+                    <strong>Live Risk-Derived Rate:</strong> Repo (6.50%) + {derived_spread:.2f}% ({risk_tier_name}) = <strong>{benchmark_rate:.2f}% p.a.</strong>
+                    <div style="font-size: 10px; color: #166534; margin-top: 2px;">
+                        Objectively derived from Five-Cs Composite Score ({comp_score:.1f}/100) in Stage 3.
+                    </div>
+                </div>
+                <div>{concession_chip}</div>
+            </div>"""
         _render_html(pricing_badge)
 
         # 2. Live Amortization & Debt Service Outflow Calculation

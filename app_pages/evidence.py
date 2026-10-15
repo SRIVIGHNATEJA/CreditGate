@@ -49,8 +49,14 @@ chip_ext = status_pill("Extracted", variant="approve" if is_extracted else "neut
 chip_lock = status_pill("Locked", variant="approve" if is_locked else "neutral")
 st.markdown(f"**Status:** &nbsp; {chip_docs} &nbsp;|&nbsp; {chip_ext} &nbsp;|&nbsp; {chip_lock}", unsafe_allow_html=True)
 
-if st.session_state.get("lock_cleared_message"):
-    render_callout(st.session_state.lock_cleared_message, title="Lock Status Notice", variant="warning")
+ev_msg = st.session_state.get("lock_cleared_message")
+if ev_msg:
+    if st.session_state.get("_toast_shown_for") == ev_msg:
+        st.session_state.lock_cleared_message = None
+        st.session_state._toast_shown_for = None
+    else:
+        st.toast(ev_msg, icon="🔄")
+        st.session_state._toast_shown_for = ev_msg
 
 # Active Facility Sanction Context
 collateral_val = ctx.get("collateral_val", 0.0)
@@ -94,12 +100,6 @@ if is_locked:
         f"Financials locked: Bank, GST, ITR verified for {ctx['company_name']}",
         title="Financials Locked",
         variant="success",
-    )
-elif is_sample_active:
-    render_callout(
-        f"Ready to extract: Bank, GST, ITR for {ctx['company_name']}",
-        title="Ready to Extract",
-        variant="info",
     )
 
 if is_sample_active:
@@ -247,7 +247,7 @@ if not has_all_docs:
 else:
     if st.session_state.extracted_case is None:
         with st.container(border=True):
-            col_e1, col_e2 = st.columns([2, 1])
+            col_e1, col_e2, col_e3 = st.columns([5, 3, 4], vertical_alignment="center")
             with col_e1:
                 engine_choice = st.radio(
                     "Ingestion Engine Pipeline",
@@ -265,16 +265,19 @@ else:
                 key_configured = bool(os.getenv("GEMINI_API_KEY") and os.getenv("GEMINI_API_KEY") != "your_gemini_api_key_here")
                 if use_gemini:
                     if key_configured:
-                        st.markdown(f"Status: &nbsp; {status_pill('AI Connected', variant='info')}", unsafe_allow_html=True)
-                        st.caption("Active model: `gemini-3.5-flash-lite`")
+                        badge_eng = status_pill("AI Connected", variant="info")
+                        eng_sub = "Active: gemini-3.5-flash-lite"
                     else:
-                        st.markdown(f"Status: &nbsp; {status_pill('Offline Mode (Key Unset)', variant='conditional')}", unsafe_allow_html=True)
-                        st.caption("Auto-engaging deterministic fallback")
+                        badge_eng = status_pill("Offline Fallback", variant="conditional")
+                        eng_sub = "Auto-fallback to offline"
                 else:
-                    st.markdown(f"Status: &nbsp; {status_pill('Deterministic Active', variant='info')}", unsafe_allow_html=True)
-                    st.caption("Local OCR & Regex, zero network latency")
+                    badge_eng = status_pill("Deterministic Active", variant="info")
+                    eng_sub = "Local OCR & Regex, 0 latency"
+                st.markdown(f"<div style='font-size: 10px; font-weight: 700; color: #64748B; text-transform: uppercase;'>Engine Status</div><div style='margin-top: 2px;'>{badge_eng}</div><div style='font-size: 9.5px; color: #94A3B8; margin-top: 2px;'>{eng_sub}</div>", unsafe_allow_html=True)
+            with col_e3:
+                scan_btn = st.button(":material/bolt: Run Extraction (3 Parallel Threads)", type="primary", key="btn_run_extraction_main", width="stretch")
 
-        if st.button(":material/bolt: Run Extraction (3 Parallel Threads)", type="primary", key="btn_run_extraction_main"):
+        if scan_btn:
             with st.status("Extracting and verifying documents...", expanded=True) as status:
                 t_start = time.perf_counter()
                 try:

@@ -765,9 +765,21 @@ if res is not None:
                     st.session_state.txt_field_note = "Tax governance check: GSTR-3B monthly filings and advance tax payments match annual audited financials without statutory demands."
                     st.rerun()
 
-            fn_text = st.text_area("Field Visit Observation / Qualitative Notes", placeholder="e.g. Visited plant in Okhla. Machinery in operational condition, factory working at 85% utilization.", key="txt_field_note")
-            fn_pillar = st.selectbox("Affected C Pillar", ["CHARACTER", "CAPACITY", "CAPITAL", "COLLATERAL", "CONDITIONS", "GENERAL"], key="sb_fn_pillar")
-            if st.button("Save Field Note", key="btn_save_field_note", width="stretch"):
+            with st.container(border=True):
+                st.markdown("<div style='font-size: 11px; font-weight: 700; color: #0F766E; text-transform: uppercase; margin-bottom: 6px;'>Field Due Diligence Log Form</div>", unsafe_allow_html=True)
+                fn_text = st.text_area(
+                    "Field Visit Observation / Qualitative Notes",
+                    placeholder="e.g. Visited plant in Okhla. Machinery in operational condition, factory working at 85% utilization.",
+                    key="txt_field_note",
+                    height=85,
+                )
+                col_fn1, col_fn2 = st.columns([3, 2], vertical_alignment="bottom")
+                with col_fn1:
+                    fn_pillar = st.selectbox("Affected C Pillar", ["CHARACTER", "CAPACITY", "CAPITAL", "COLLATERAL", "CONDITIONS", "GENERAL"], key="sb_fn_pillar")
+                with col_fn2:
+                    save_btn = st.button(":material/save: Save Field Note", key="btn_save_field_note", type="primary", width="stretch")
+
+            if save_btn:
                 if fn_text.strip():
                     note_entry = {
                         "affected_c": fn_pillar,
