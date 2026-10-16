@@ -7,6 +7,8 @@ from decimal import Decimal
 from typing import Optional, Dict, Any, List, Tuple
 from concurrent.futures import ThreadPoolExecutor
 
+from pydantic import BaseModel, Field
+
 import pymupdf
 
 from core.config import GEMINI_API_KEY, MODEL_EXTRACTION
@@ -320,13 +322,39 @@ def _extract_text_deterministic_itr(pdf_bytes: bytes) -> ITRExtraction:
 # 4. MULTIMODAL EXTRACTION WITH GEMINI 3.5 FLASH LITE
 # ============================================================================
 
+class GeminiBankExtractionSchema(BaseModel):
+    total_credits: Optional[float] = None
+    total_debits: Optional[float] = None
+    opening_balance: Optional[float] = None
+    closing_balance: Optional[float] = None
+    bounce_count: Optional[int] = None
+    confidence: str = Field(default="HIGH")
+
+
+class GeminiGSTExtractionSchema(BaseModel):
+    taxable_value: Optional[float] = None
+    total_tax_paid: Optional[float] = None
+    confidence: str = Field(default="HIGH")
+
+
+class GeminiITRExtractionSchema(BaseModel):
+    gross_total_income: Optional[float] = None
+    profit_after_tax: Optional[float] = None
+    depreciation: Optional[float] = None
+    interest_paid: Optional[float] = None
+    net_worth: Optional[float] = None
+    total_debt: Optional[float] = None
+    existing_emi_obligations: Optional[float] = None
+    confidence: str = Field(default="HIGH")
+
+
 def _call_gemini_vision(pdf_bytes: bytes, system_prompt: str, schema_cls: Any, api_key: Optional[str] = None) -> Any:
     """
     Calls Gemini API passing sanitized inline bytes directly without temporary disk files.
-    Enforces structured JSON output conforming to the specified Pydantic schema.
+    Enforces structured JSON output conforming to the specified clean Pydantic schema.
     Falls back gracefully to deterministic extraction if API key is unset or network fails.
     """
-    key_to_use = api_key or GEMINI_API_KEY
+    key_to_use = api_key or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or GEMINI_API_KEY
     if not key_to_use or key_to_use == "your_gemini_api_key_here":
         logger.info("GEMINI_API_KEY not configured. Engaging deterministic fallback parser.")
         return None
@@ -354,12 +382,11 @@ def _call_gemini_vision(pdf_bytes: bytes, system_prompt: str, schema_cls: Any, a
         if response.text:
             parsed_json = json.loads(response.text)
             inst = schema_cls(**parsed_json)
-            inst.extraction_engine = "AI_GEMINI"
             return inst
         return None
 
     except Exception as e:
-        logger.warning(f"Gemini 3.5 Flash Lite API call failed: {e}. Falling back to deterministic parser.")
+        logger.warning(f"Gemini API call failed: {e}. Falling back to deterministic parser.")
         return None
 
 
@@ -392,10 +419,18 @@ def extract_bank_statement(
             "Return numeric values only as standard numbers or strings without commas."
         )
 
-        result = _call_gemini_vision(redacted_bytes, prompt, BankExtraction, api_key=gemini_api_key)
-        if result is not None:
-            result.redaction_events = audit_events
-            return result
+        raw = _call_gemini_vision(redacted_bytes, prompt, GeminiBankExtractionSchema, api_key=gemini_api_key)
+        if raw is not None:
+            return BankExtraction(
+                total_credits=Decimal(str(raw.total_credits)) if raw.total_credits is not None else None,
+                total_debits=Decimal(str(raw.total_debits)) if raw.total_debits is not None else None,
+                opening_balance=Decimal(str(raw.opening_balance)) if raw.opening_balance is not None else None,
+                closing_balance=Decimal(str(raw.closing_balance)) if raw.closing_balance is not None else None,
+                bounce_count=raw.bounce_count,
+                confidence=raw.confidence.upper() if raw.confidence and raw.confidence.upper() in ["HIGH", "LOW"] else "HIGH",
+                extraction_engine="AI_GEMINI",
+                redaction_events=audit_events,
+            )
 
     fallback = _extract_text_deterministic_bank(redacted_bytes)
     fallback.redaction_events = audit_events
@@ -428,10 +463,15 @@ def extract_gstr3b(
             "Return clean numbers without currency symbols."
         )
 
-        result = _call_gemini_vision(redacted_bytes, prompt, GSTExtraction, api_key=gemini_api_key)
-        if result is not None:
-            result.redaction_events = audit_events
-            return result
+        raw = _call_gemini_vision(redacted_bytes, prompt, GeminiGSTExtractionSchema, api_key=gemini_api_key)
+        if raw is not None:
+            return GSTExtraction(
+                taxable_value=Decimal(str(raw.taxable_value)) if raw.taxable_value is not None else None,
+                total_tax_paid=Decimal(str(raw.total_tax_paid)) if raw.total_tax_paid is not None else None,
+                confidence=raw.confidence.upper() if raw.confidence and raw.confidence.upper() in ["HIGH", "LOW"] else "HIGH",
+                extraction_engine="AI_GEMINI",
+                redaction_events=audit_events,
+            )
 
     fallback = _extract_text_deterministic_gst(redacted_bytes)
     fallback.redaction_events = audit_events
@@ -469,10 +509,20 @@ def extract_itr(
             "Return numbers without commas."
         )
 
-        result = _call_gemini_vision(redacted_bytes, prompt, ITRExtraction, api_key=gemini_api_key)
-        if result is not None:
-            result.redaction_events = audit_events
-            return result
+        raw = _call_gemini_vision(redacted_bytes, prompt, GeminiITRExtractionSchema, api_key=gemini_api_key)
+        if raw is not None:
+            return ITRExtraction(
+                gross_total_income=Decimal(str(raw.gross_total_income)) if raw.gross_total_income is not None else None,
+                profit_after_tax=Decimal(str(raw.profit_after_tax)) if raw.profit_after_tax is not None else None,
+                depreciation=Decimal(str(raw.depreciation)) if raw.depreciation is not None else None,
+                interest_paid=Decimal(str(raw.interest_paid)) if raw.interest_paid is not None else None,
+                net_worth=Decimal(str(raw.net_worth)) if raw.net_worth is not None else None,
+                total_debt=Decimal(str(raw.total_debt)) if raw.total_debt is not None else None,
+                existing_emi_obligations=Decimal(str(raw.existing_emi_obligations)) if raw.existing_emi_obligations is not None else None,
+                confidence=raw.confidence.upper() if raw.confidence and raw.confidence.upper() in ["HIGH", "LOW"] else "HIGH",
+                extraction_engine="AI_GEMINI",
+                redaction_events=audit_events,
+            )
 
     fallback = _extract_text_deterministic_itr(redacted_bytes)
     fallback.redaction_events = audit_events
@@ -556,7 +606,8 @@ def extract_all_documents(
         getattr(itr_data, "redaction_events", [])
     )
 
-    diagnostic_code = "CONNECTED" if primary_engine == "AI_GEMINI" else ("FORCE_DETERMINISTIC" if force_deterministic else ("KEY_MISSING" if not (gemini_api_key or GEMINI_API_KEY) else "FALLBACK_DETERMINISTIC"))
+    has_key = bool(gemini_api_key or GEMINI_API_KEY or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"))
+    diagnostic_code = "CONNECTED" if primary_engine == "AI_GEMINI" else ("FORCE_DETERMINISTIC" if force_deterministic else ("KEY_MISSING" if not has_key else "FALLBACK_DETERMINISTIC"))
     engine_display = "Multimodal AI (Gemini 3.5 Flash Lite)" if primary_engine == "AI_GEMINI" else "Deterministic Regex (PyMuPDF)"
 
     metadata = {

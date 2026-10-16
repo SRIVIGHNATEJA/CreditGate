@@ -3,11 +3,15 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(BASE_DIR / ".env")
-load_dotenv()
+load_dotenv(BASE_DIR / ".env", override=True)
+load_dotenv(override=True)
 
-# API Keys
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+def reload_env():
+    load_dotenv(BASE_DIR / ".env", override=True)
+    load_dotenv(override=True)
+
+# API Keys (resolved dynamically or at import - supports both GOOGLE_API_KEY and GEMINI_API_KEY)
+GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 
 # Model Configuration

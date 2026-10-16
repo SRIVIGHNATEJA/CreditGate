@@ -249,23 +249,27 @@ else:
         with st.container(border=True):
             col_e1, col_e2, col_e3 = st.columns([5, 3, 4], vertical_alignment="center")
             with col_e1:
+                key_configured = bool(
+                    (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"))
+                    and (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")) != "your_gemini_api_key_here"
+                )
+                default_eng_idx = 1 if (key_configured and not os.getenv("PYTEST_CURRENT_TEST")) else 0
                 engine_choice = st.radio(
                     "Ingestion Engine Pipeline",
                     [
                         "Deterministic Native (PyMuPDF Offline)",
                         "Multimodal AI (Gemini 3.5 Flash Lite)"
                     ],
-                    index=0,
+                    index=default_eng_idx,
                     horizontal=True,
                     help="Deterministic Native (PyMuPDF): Zero network latency, regex & tabular parser for standard PDF filings. Multimodal AI (Gemini 3.5 Flash Lite): Vision OCR for non-standard or scanned layouts.",
                     key="sel_extraction_engine",
                 )
                 use_gemini = "Gemini" in engine_choice
             with col_e2:
-                key_configured = bool(os.getenv("GEMINI_API_KEY") and os.getenv("GEMINI_API_KEY") != "your_gemini_api_key_here")
                 if use_gemini:
                     if key_configured:
-                        badge_eng = status_pill("AI Connected", variant="info")
+                        badge_eng = status_pill("AI Connected", variant="approve")
                         eng_sub = "Active: gemini-3.5-flash-lite"
                     else:
                         badge_eng = status_pill("Offline Fallback", variant="conditional")
@@ -281,7 +285,7 @@ else:
             with st.status("Extracting and verifying documents...", expanded=True) as status:
                 t_start = time.perf_counter()
                 try:
-                    active_gemini_key = os.getenv("GEMINI_API_KEY") if use_gemini else None
+                    active_gemini_key = (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")) if use_gemini else None
                     if active_gemini_key == "your_gemini_api_key_here":
                         active_gemini_key = None
                     credit_case, meta = extract_all_documents(

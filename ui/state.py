@@ -296,6 +296,30 @@ def render_sidebar() -> Dict[str, Any]:
         is_p4_active = ("cam" in curr_page or "audit" in curr_page)
 
         # 1. Executive Brand & Command Identity Card (Light Institutional Design)
+        has_gemini = bool(
+            (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"))
+            and (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")) != "your_gemini_api_key_here"
+        )
+        has_tavily = bool(
+            os.getenv("TAVILY_API_KEY")
+            and os.getenv("TAVILY_API_KEY") != "your_tavily_api_key_here"
+        )
+        entity_pill = (
+            '<span style="font-size: 8.5px; font-weight: 700; color: #0F766E; background: #CCFBF1; border: 1px solid #99F6E4; border-radius: 3px; padding: 1px 5px;">PVT LTD • MCA-21</span>'
+            if is_corporate
+            else '<span style="font-size: 8.5px; font-weight: 700; color: #64748B; background: #F1F5F9; border: 1px solid #E2E8F0; border-radius: 3px; padding: 1px 5px;">PROPRIETOR • MSME</span>'
+        )
+        gemini_status_html = (
+            '<span style="color: #059669; font-weight: 700;">● FLASH 3.5 LITE</span>'
+            if has_gemini
+            else '<span style="color: #64748B; font-weight: 600;">○ PYMUPDF LOCAL</span>'
+        )
+        tavily_status_html = (
+            '<span style="color: #059669; font-weight: 700;">● LIVE SURVEILLANCE</span>'
+            if has_tavily
+            else '<span style="color: #D97706; font-weight: 600;">○ BENCHMARK MODE</span>'
+        )
+
         brand_card = f"""<div style="background: #FFFFFF; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04); border: 1px solid #E2E8F0; border-top: 3px solid #0F766E;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                 <div style="display: flex; align-items: center; gap: 7px;">
@@ -309,21 +333,38 @@ def render_sidebar() -> Dict[str, Any]:
                 </div>
                 <div style="background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 9999px; padding: 2px 7px; display: flex; align-items: center; gap: 4px;">
                     <span style="display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: #10B981;"></span>
-                    <span style="font-size: 9px; font-weight: 700; color: #059669; letter-spacing: 0.04em; text-transform: uppercase;">ONLINE</span>
+                    <span style="font-size: 9px; font-weight: 700; color: #059669; letter-spacing: 0.04em; text-transform: uppercase;">GATEWAY ONLINE</span>
                 </div>
             </div>
-            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px 10px; margin-top: 6px;">
+            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid #0F766E; border-radius: 6px; padding: 8px 10px; margin-top: 6px;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <span style="font-size: 9px; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: 0.05em;">Active Dossier</span>
                     <span style="font-size: 10px; font-weight: 600; color: #0F766E; font-family: monospace; background: #CCFBF1; padding: 1px 5px; border-radius: 3px;">{app_id}</span>
                 </div>
-                <div style="font-size: 12px; font-weight: 700; color: #0B1F3A; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{company_name}">
-                    {company_name}
+                <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 4px;">
+                    <div style="font-size: 12px; font-weight: 700; color: #0B1F3A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 155px;" title="{company_name}">
+                        {company_name}
+                    </div>
+                    {entity_pill}
                 </div>
-                <div style="font-size: 10px; color: #64748B; margin-top: 4px; display: flex; justify-content: space-between;">
+                <div style="font-size: 10px; color: #64748B; margin-top: 5px; display: flex; justify-content: space-between; border-top: 1px dashed #E2E8F0; padding-top: 4px;">
                     <span>Sanction: <strong style="color: #0B1F3A;">₹{loan_amt/100000:.1f}L</strong></span>
                     <span>Rate: <strong style="color: #0F766E;">{rate_val:.2f}%</strong></span>
                     <span>Tenor: <strong style="color: #0B1F3A;">{tenure_val}M</strong></span>
+                </div>
+            </div>
+            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 6px 10px; margin-top: 6px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
+                    <span style="font-size: 8.5px; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: 0.04em;">AI & Legal Gateway</span>
+                    <span style="font-size: 8px; font-weight: 700; color: #0F766E; font-family: monospace;">REALTIME</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 9px; padding: 1.5px 0;">
+                    <span style="color: #475569;">Multimodal Vision OCR</span>
+                    {gemini_status_html}
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 9px; padding: 1.5px 0; border-top: 1px dashed #E2E8F0;">
+                    <span style="color: #475569;">Judicial Docket Radar</span>
+                    {tavily_status_html}
                 </div>
             </div>
         </div>"""

@@ -611,13 +611,22 @@ if res is not None:
         with col_q1:
             scan_triggered = st.button(":material/radar: Execute Adverse Media & Legal Docket Scan", key="btn_exec_media_scan", type="primary", width="stretch")
         with col_q2:
+            has_tavily = bool(os.getenv("TAVILY_API_KEY") and os.getenv("TAVILY_API_KEY") != "your_tavily_api_key_here")
             if is_demo_cohort:
-                st.markdown(f"<div style='text-align: center; padding-top: 6px;'>{status_pill('Curated Simulation', variant='info')}</div>", unsafe_allow_html=True)
-                use_synthetic_demo = True
+                if has_tavily:
+                    use_live_tavily = st.toggle("🛰️ Live Tavily Radar", value=False, help="Toggle to query live Tavily search engine across real web registries instead of curated benchmark case study dockets.", key="tgl_live_tavily_demo")
+                    use_synthetic_demo = not use_live_tavily
+                    if use_live_tavily:
+                        st.markdown(f"<div style='text-align: center; margin-top: -6px;'>{status_pill('Live Web Active', variant='approve')}</div>", unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"<div style='text-align: center; margin-top: -6px;'>{status_pill('Benchmark Case', variant='info')}</div>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"<div style='text-align: center; padding-top: 6px;'>{status_pill('Curated Simulation', variant='info')}</div>", unsafe_allow_html=True)
+                    use_synthetic_demo = True
             else:
                 use_synthetic_demo = st.checkbox(
                     ":material/science: Simulation Mode",
-                    value=not bool(os.getenv("TAVILY_API_KEY")),
+                    value=not has_tavily,
                     help="Generates simulated legal/adverse records watermarked with [SYNTHETIC DEMO DATA]",
                     key="chk_synthetic_demo",
                 )
