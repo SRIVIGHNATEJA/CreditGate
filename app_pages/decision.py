@@ -21,6 +21,7 @@ from core.researcher import (
     dismiss_adverse_finding,
     extract_policy_flags,
     merge_existing_reviews,
+    extract_legal_docket_text,
 )
 from core.policy import Verdict
 from core.scorer import score_credit_case, ScoreResult
@@ -764,7 +765,22 @@ if res is not None:
                                 {f.snippet}
                             </div>"""
                             _render_html(docket_header)
-                            st.markdown(f"[:material/open_in_new: Official Source Registry Docket]({f.source_url})")
+                            col_lk1, col_lk2 = st.columns([1, 1])
+                            with col_lk1:
+                                st.markdown(f"[:material/open_in_new: Official Source Docket]({f.source_url})")
+                            with col_lk2:
+                                with st.popover("📜 Deep Order Inspection (Extract)"):
+                                    st.caption("Fetches full legal judgment text via Tavily Extract API.")
+                                    if st.button("Extract Full Text", key=f"btn_extract_{f.id}", width="stretch"):
+                                        with st.spinner("Calling Tavily Extract API..."):
+                                            full_text = extract_legal_docket_text(f.source_url)
+                                            if full_text:
+                                                st.session_state[f"extracted_text_{f.id}"] = full_text
+                                            else:
+                                                st.warning("Order text could not be extracted from this URL.")
+                                    curr_txt = st.session_state.get(f"extracted_text_{f.id}")
+                                    if curr_txt:
+                                        st.text_area("Extracted Judicial Text", value=curr_txt, height=200, disabled=True, key=f"txt_full_{f.id}")
                         with col_t2:
                             if f.review_status == ReviewStatus.CONFIRMED:
                                 render_callout(f"Status: CONFIRMED\n\nCitation: {f.confirmation_note or 'N/A'}\nBy: {f.reviewed_by}", title="Officer Confirmed", variant="error")

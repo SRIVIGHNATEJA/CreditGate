@@ -3,6 +3,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any, Tuple
+import logging
 import requests
 
 from core.data_models import (
@@ -11,6 +12,8 @@ from core.data_models import (
     AdverseMediaFinding,
     AdverseMediaReport,
 )
+
+logger = logging.getLogger("creditgate.researcher")
 
 # ============================================================================
 # 1. DISAMBIGUATED QUERY BUILDER
@@ -246,7 +249,7 @@ def search_adverse_media(
         payload = {
             "api_key": resolved_key,
             "query": f"{query} AND (NCLT OR insolvency OR DGGI OR IBC OR court OR fraud OR default OR controversy)",
-            "search_depth": "basic",
+            "search_depth": "advanced",
             "max_results": 5,
             "include_domains": [
                 "ibbi.gov.in",
@@ -318,6 +321,59 @@ def search_adverse_media(
             is_synthetic_demo=False,
             error_message=f"Network error during adverse media search: {str(e)}"
         )
+
+
+def extract_legal_docket_text(url: str, api_key: Optional[str] = None, timeout: int = 15) -> Optional[str]:
+    """
+    Extracts the full text of a judicial judgment, NCLT order, or regulatory notice
+    using Tavily's extract API endpoint (client.extract).
+    Used for deep legal due diligence so underwriters can inspect the full judgment text.
+    """
+    resolved_key = api_key or os.getenv("TAVILY_API_KEY")
+    if not resolved_key or not url:
+        return None
+    try:
+        try:
+            from tavily import TavilyClient
+            client = TavilyClient(api_key=resolved_key)
+            res = client.extract(urls=[url])
+            results = res.get("results", [])
+            if results and "raw_content" in results[0]:
+                return results[0]["raw_content"]
+        except ImportError:
+            pass
+
+        # Fallback to direct REST endpoint
+        resp = requests.post(
+            "https://api.tavily.com/extract",
+            json={"api_key": resolved_key, "urls": [url]},
+            timeout=timeout,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            results = data.get("results", [])
+            if results and "raw_content" in results[0]:
+                return results[0]["raw_content"]
+    except Exception as e:
+        logger.warning(f"Tavily extract failed for {url}: {e}")
+    return None
+
+
+def crawl_registry_domain(base_url: str, api_key: Optional[str] = None, extract_depth: str = "advanced") -> Optional[Dict[str, Any]]:
+    """
+    Crawls a regulatory or registry domain hierarchy using Tavily's crawl API endpoint (client.crawl).
+    Used for comprehensive audits of corporate registries or judicial benches.
+    """
+    resolved_key = api_key or os.getenv("TAVILY_API_KEY")
+    if not resolved_key or not base_url:
+        return None
+    try:
+        from tavily import TavilyClient
+        client = TavilyClient(api_key=resolved_key)
+        return client.crawl(url=base_url, extract_depth=extract_depth)
+    except Exception as e:
+        logger.warning(f"Tavily crawl failed for {base_url}: {e}")
+    return None
 
 
 # ============================================================================
