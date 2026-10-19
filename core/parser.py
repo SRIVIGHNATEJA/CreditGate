@@ -370,7 +370,8 @@ def _call_gemini_vision(pdf_bytes: bytes, system_prompt: str, schema_cls: Any, a
             system_instruction=system_prompt,
             response_mime_type="application/json",
             response_schema=schema_cls,
-            temperature=0.0
+            temperature=0.0,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         )
 
         response = client.models.generate_content(
