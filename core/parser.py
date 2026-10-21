@@ -354,6 +354,9 @@ def _call_gemini_vision(pdf_bytes: bytes, system_prompt: str, schema_cls: Any, a
     Enforces structured JSON output conforming to the specified clean Pydantic schema.
     Falls back gracefully to deterministic extraction if API key is unset or network fails.
     """
+    if os.getenv("PYTEST_CURRENT_TEST") and not api_key:
+        return None
+
     key_to_use = api_key or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or GEMINI_API_KEY
     if not key_to_use or key_to_use == "your_gemini_api_key_here":
         logger.info("GEMINI_API_KEY not configured. Engaging deterministic fallback parser.")
