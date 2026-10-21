@@ -74,8 +74,8 @@ with tab_cam:
                 unsafe_allow_html=True
             )
 
-            # Word, PDF, and Markdown download buttons in balanced action row
-            col_d1, col_d2, col_d3 = st.columns(3)
+            # Word and PDF download buttons in balanced 2-column action row
+            col_d1, col_d2 = st.columns(2)
             with col_d1:
                 docx_bytes = generate_cam_docx(
                     credit_case=st.session_state.locked_case,
@@ -89,11 +89,12 @@ with tab_cam:
                     pan=pan_input,
                 )
                 st.download_button(
-                    label=":material/download: Download Formal CAM (.docx)",
+                    label=":material/description: Download Formal CAM (.docx)",
                     data=docx_bytes,
                     file_name=f"CAM_{c_slug}_{st.session_state.app_id}.docx",
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     help="Formatted Microsoft Word document with natural pagination, data tables, and signature blocks.",
+                    type="primary",
                     width="stretch",
                 )
             with col_d2:
@@ -109,20 +110,12 @@ with tab_cam:
                     pan=pan_input,
                 )
                 st.download_button(
-                    label=":material/download: Download Printable CAM (.pdf)",
+                    label=":material/picture_as_pdf: Download Committee Sign-off PDF",
                     data=pdf_bytes,
                     file_name=f"CAM_{c_slug}_{st.session_state.app_id}.pdf",
                     mime="application/pdf",
                     help="Printable ReportLab PDF with structured headers, styled tables, and committee sign-off boxes.",
-                    width="stretch",
-                )
-            with col_d3:
-                st.download_button(
-                    label=":material/download: Download Structured CAM (.md)",
-                    data=st.session_state.cam_markdown,
-                    file_name=f"CAM_{c_slug}_{st.session_state.app_id}.md",
-                    mime="text/markdown",
-                    help="Standard GitHub-flavored Markdown formatted memorandum for automated archival.",
+                    type="secondary",
                     width="stretch",
                 )
 
@@ -178,28 +171,6 @@ with tab_cam:
                     </div>"""
                     st.markdown("\n".join(line.strip() for line in header_html.splitlines() if line.strip()), unsafe_allow_html=True)
                     st.markdown(st.session_state.cam_markdown)
-
-                    sign_html = """<div style="margin-top: 24px; border-top: 1px solid #E2E8F0; padding-top: 16px;">
-                        <div style="font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px;">Committee Sanction Sign-Off & Quorum Verification</div>
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
-                            <div style="border: 1px dashed #CBD5E1; border-radius: 6px; padding: 12px; background: #F8FAFC;">
-                                <div style="font-size: 10px; font-weight: 700; color: #0F766E; text-transform: uppercase;">1. Credit Appraiser</div>
-                                <div style="font-size: 12px; font-weight: 600; color: #0B1F3A; margin-top: 4px;">Senior MSME Credit Analyst</div>
-                                <div style="font-size: 11px; color: #64748B;">Desk Review & Primary Due Diligence</div>
-                            </div>
-                            <div style="border: 1px dashed #CBD5E1; border-radius: 6px; padding: 12px; background: #F8FAFC;">
-                                <div style="font-size: 10px; font-weight: 700; color: #0F766E; text-transform: uppercase;">2. Risk Concurrence</div>
-                                <div style="font-size: 12px; font-weight: 600; color: #0B1F3A; margin-top: 4px;">Zonal Risk Operations Head</div>
-                                <div style="font-size: 11px; color: #64748B;">Policy Compliance & Limits Validation</div>
-                            </div>
-                            <div style="border: 1px dashed #CBD5E1; border-radius: 6px; padding: 12px; background: #F8FAFC;">
-                                <div style="font-size: 10px; font-weight: 700; color: #0F766E; text-transform: uppercase;">3. Sanctioning Authority</div>
-                                <div style="font-size: 12px; font-weight: 600; color: #0B1F3A; margin-top: 4px;">Credit Committee Chair</div>
-                                <div style="font-size: 11px; color: #64748B;">Final Sanction Determination</div>
-                            </div>
-                        </div>
-                    </div>"""
-                    st.markdown("\n".join(line.strip() for line in sign_html.splitlines() if line.strip()), unsafe_allow_html=True)
 
 # ============================================================================
 # SUB-TAB 2: LIVE AUDIT TRAIL & PROVENANCE
@@ -321,7 +292,7 @@ with tab_audit:
                 evt_h = (evt.get("event_hash") or "N/A")[:16]
                 prev_h = (evt.get("prev_hash") or "N/A")[:16]
                 is_genesis = (evt.get("prev_hash") == "0" * 64)
-                genesis_badge = " 🛡️ [GENESIS BLOCK]" if is_genesis else ""
+                genesis_badge = " [GENESIS BLOCK]" if is_genesis else ""
                 exp_title = f"{evt_ts} | {evt.get('event_type', '')} ({evt.get('actor', '')}){genesis_badge}"
                 with st.expander(exp_title, expanded=False, key=f"exp_audit_{idx}_{evt_h[:8]}"):
                     if is_genesis:
