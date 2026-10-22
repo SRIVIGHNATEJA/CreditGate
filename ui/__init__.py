@@ -27,4 +27,5 @@ from ui.state import (
     render_sidebar,
     get_app_context,
     record_event,
+    reset_facility_to_defaults,
 )

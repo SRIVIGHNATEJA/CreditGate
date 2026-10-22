@@ -2,10 +2,12 @@ import os
 import re
 import json
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Dict, Any, List, Optional
+
+IST = timezone(timedelta(hours=5, minutes=30))
 
 import streamlit as st
 
@@ -113,8 +115,8 @@ def init_session_state():
     """Initializes all required session-state variables if not present."""
     if "lock_cleared_message" not in st.session_state:
         st.session_state.lock_cleared_message = None
-    if "session_started_at" not in st.session_state:
-        st.session_state.session_started_at = datetime.now(timezone.utc).strftime("%H:%M UTC")
+    if "session_started_at" not in st.session_state or "UTC" in str(st.session_state.get("session_started_at", "")) or ("AM" not in str(st.session_state.get("session_started_at", "")) and "PM" not in str(st.session_state.get("session_started_at", ""))):
+        st.session_state.session_started_at = datetime.now(IST).strftime("%I:%M %p IST").lstrip("0")
     if "app_id" not in st.session_state:
         st.session_state.app_id = generate_application_id("Apex Synthetic Holdings (Demo)")
     if "audit_trail" not in st.session_state:
@@ -179,9 +181,9 @@ def init_session_state():
     if "facility_interest_rate" not in st.session_state:
         st.session_state.facility_interest_rate = 11.5
     if "facility_collateral_val" not in st.session_state:
-        st.session_state.facility_collateral_val = 0.0
+        st.session_state.facility_collateral_val = 2500000.0
     if "facility_cgtmse_covered" not in st.session_state:
-        st.session_state.facility_cgtmse_covered = True
+        st.session_state.facility_cgtmse_covered = False
 
     # Synced plain aliases for direct access
     if "loan_amount" not in st.session_state:
@@ -208,6 +210,25 @@ def init_session_state():
         st.session_state.uploaded_gst_bytes = None
     if "uploaded_itr_bytes" not in st.session_state:
         st.session_state.uploaded_itr_bytes = None
+
+
+def reset_facility_to_defaults():
+    """Resets facility terms and collateral to Policy Standard benchmark (50% coverage, standard baseline)."""
+    st.session_state.facility_loan_amount = 5000000.0
+    st.session_state.facility_tenure_months = 36
+    st.session_state.facility_interest_rate = 11.5
+    st.session_state.facility_collateral_val = 2500000.0
+    st.session_state.facility_cgtmse_covered = False
+    st.session_state.loan_amount = 5000000.0
+    st.session_state.tenure_months = 36
+    st.session_state.interest_rate = 11.5
+    st.session_state.collateral_value = 2500000.0
+    st.session_state.cgtmse_covered = False
+    st.session_state.proposed_emi = float(calculate_monthly_emi(
+        principal=Decimal("5000000.0"),
+        annual_rate_pct=Decimal("11.5"),
+        tenure_months=36,
+    ))
 
 
 def record_event(event_type: str, actor: str, details: Dict[str, Any], severity: str = "INFO"):
@@ -270,108 +291,58 @@ def render_sidebar() -> Dict[str, Any]:
         pending_cohort = st.session_state.pop("_pending_cohort_reset")
         select_and_reset_cohort(pending_cohort)
 
+    ctx = get_app_context()
+
     with st.sidebar:
-        # 0. Context variables
-        cur_cohort = st.session_state.get("active_cohort_selection", "Cohort 1: Prime MSME (Apex Synthetic Demo)")
-        is_corporate = st.session_state.get("active_is_corporate", True)
-        company_name = COHORT_COMPANY_NAMES.get(cur_cohort, "Manual Applicant Company")
-        if not is_corporate:
-            company_name = "Unincorporated MSME / Sole Proprietor"
+        # 0. Context variables directly from fresh application context
+        cur_cohort = ctx.get("cohort_selection", "")
+        is_corporate = ctx.get("is_corporate", True)
+        company_name = ctx.get("company_name", "Apex Synthetic Holdings (Demo)")
+        app_id = ctx.get("app_id") or st.session_state.get("app_id") or generate_application_id("Apex Synthetic Holdings (Demo)")
+        short_app_id = app_id[-8:] if len(app_id) >= 8 else app_id
+        pan_mismatch = bool(ctx.get("current_pan_mismatch", False))
+        current_pan = str(ctx.get("current_pan_val", "")).strip().upper()
 
-        app_id = st.session_state.get("app_id", "APP-202610-0001")
-        loan_amt = float(st.session_state.get("facility_loan_amount", 5000000.0))
-        rate_val = float(st.session_state.get("facility_interest_rate", 10.25))
-        tenure_val = int(st.session_state.get("facility_tenure_months", 36))
-        collat_val = float(st.session_state.get("facility_collateral_val", 0.0))
-        cgtmse_cov = bool(st.session_state.get("facility_cgtmse_covered", True))
-
-        emi_dec = calculate_monthly_emi(Decimal(str(loan_amt)), Decimal(str(rate_val)), tenure_val)
-        cov_pct = (collat_val / loan_amt * 100.0) if loan_amt > 0 else 0.0
-
-        # Current page detection for timeline highlighting
-        curr_page = str(st.session_state.get("current_page", "Case")).lower()
-        is_p1_active = "case" in curr_page
-        is_p2_active = "evidence" in curr_page
-        is_p3_active = "decision" in curr_page
-        is_p4_active = ("cam" in curr_page or "audit" in curr_page)
-
-        # 1. Executive Brand & Command Identity Card (Light Institutional Design)
-        has_gemini = bool(
-            (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"))
-            and (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")) != "your_gemini_api_key_here"
-        )
-        has_tavily = bool(
-            os.getenv("TAVILY_API_KEY")
-            and os.getenv("TAVILY_API_KEY") != "your_tavily_api_key_here"
-        )
+        # 1. Entity type pill and format verification descriptors
         entity_pill = (
-            '<span style="font-size: 8.5px; font-weight: 700; color: #0F766E; background: #CCFBF1; border: 1px solid #99F6E4; border-radius: 3px; padding: 1px 5px;">PVT LTD • MCA-21</span>'
+            '<span style="font-size: 9.5px; font-weight: 700; color: #0F766E; background: #CCFBF1; border: 1px solid #99F6E4; border-radius: 4px; padding: 2px 7px;">PVT LTD</span>'
             if is_corporate
-            else '<span style="font-size: 8.5px; font-weight: 700; color: #64748B; background: #F1F5F9; border: 1px solid #E2E8F0; border-radius: 3px; padding: 1px 5px;">PROPRIETOR • MSME</span>'
+            else '<span style="font-size: 9.5px; font-weight: 700; color: #64748B; background: #F1F5F9; border: 1px solid #E2E8F0; border-radius: 4px; padding: 2px 7px;">PROPRIETOR</span>'
         )
-        gemini_status_html = (
-            '<span style="color: #059669; font-weight: 700;">● FLASH 3.5 LITE</span>'
-            if has_gemini
-            else '<span style="color: #64748B; font-weight: 600;">○ PYMUPDF LOCAL</span>'
-        )
-        tavily_status_html = (
-            '<span style="color: #059669; font-weight: 700;">● LIVE SURVEILLANCE</span>'
-            if has_tavily
-            else '<span style="color: #D97706; font-weight: 600;">○ BENCHMARK MODE</span>'
-        )
+        cin_input_val = str(ctx.get("cin_input", "")).strip().upper()
+        if not is_corporate:
+            cin_status_text = "Unregistered MSME"
+            cin_badge_col = "#64748B"
+        elif not cin_input_val or cin_input_val in ("UNREGISTERED_MSME", ""):
+            cin_status_text = "Awaiting Document Extraction"
+            cin_badge_col = "#64748B"
+        else:
+            is_cin_syntax_valid, _ = validate_cin_syntax(cin_input_val)
+            if not is_cin_syntax_valid:
+                cin_status_text = "Invalid Format"
+                cin_badge_col = "#EF4444"
+            else:
+                cin_status_text = "Valid Format (MCA-21)"
+                cin_badge_col = "#0F766E"
 
-        brand_card = f"""<div style="background: #FFFFFF; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04); border: 1px solid #E2E8F0; border-top: 3px solid #0F766E;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <div style="display: flex; align-items: center; gap: 7px;">
-                    <div style="background: #0F766E; width: 22px; height: 22px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #FFFFFF; box-shadow: 0 2px 4px rgba(15, 118, 110, 0.25);">
-                        🛡️
-                    </div>
-                    <div>
-                        <div style="font-size: 13px; font-weight: 800; color: #0B1F3A; letter-spacing: 0.03em; line-height: 1.1;">CREDITGATE</div>
-                        <div style="font-size: 9px; font-weight: 600; color: #64748B; letter-spacing: 0.05em; text-transform: uppercase;">v3.0 ENTERPRISE</div>
-                    </div>
-                </div>
-                <div style="background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 9999px; padding: 2px 7px; display: flex; align-items: center; gap: 4px;">
-                    <span style="display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: #10B981;"></span>
-                    <span style="font-size: 9px; font-weight: 700; color: #059669; letter-spacing: 0.04em; text-transform: uppercase;">GATEWAY ONLINE</span>
-                </div>
-            </div>
-            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid #0F766E; border-radius: 6px; padding: 8px 10px; margin-top: 6px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-size: 9px; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: 0.05em;">Active Dossier</span>
-                    <span style="font-size: 10px; font-weight: 600; color: #0F766E; font-family: monospace; background: #CCFBF1; padding: 1px 5px; border-radius: 3px;">{app_id}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 4px;">
-                    <div style="font-size: 12px; font-weight: 700; color: #0B1F3A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 155px;" title="{company_name}">
-                        {company_name}
-                    </div>
-                    {entity_pill}
-                </div>
-                <div style="font-size: 10px; color: #64748B; margin-top: 5px; display: flex; justify-content: space-between; border-top: 1px dashed #E2E8F0; padding-top: 4px;">
-                    <span>Sanction: <strong style="color: #0B1F3A;">₹{loan_amt/100000:.1f}L</strong></span>
-                    <span>Rate: <strong style="color: #0F766E;">{rate_val:.2f}%</strong></span>
-                    <span>Tenor: <strong style="color: #0B1F3A;">{tenure_val}M</strong></span>
-                </div>
-            </div>
-            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 6px 10px; margin-top: 6px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
-                    <span style="font-size: 8.5px; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: 0.04em;">AI & Legal Gateway</span>
-                    <span style="font-size: 8px; font-weight: 700; color: #0F766E; font-family: monospace;">REALTIME</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 9px; padding: 1.5px 0;">
-                    <span style="color: #475569;">Multimodal Vision OCR</span>
-                    {gemini_status_html}
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 9px; padding: 1.5px 0; border-top: 1px dashed #E2E8F0;">
-                    <span style="color: #475569;">Judicial Docket Radar</span>
-                    {tavily_status_html}
-                </div>
-            </div>
-        </div>"""
-        _render_html(brand_card)
+        pan_check = ctx.get("pan_check", {})
+        is_pan_valid = pan_check.get("is_valid", False)
+        if not current_pan or current_pan in ("UNREGISTERED_MSME", ""):
+            pan_status_text = "Awaiting Document Extraction"
+            pan_badge_col = "#64748B"
+        elif not is_pan_valid:
+            pan_status_text = "Invalid Format"
+            pan_badge_col = "#EF4444"
+        elif pan_mismatch:
+            pan_status_text = "Entity Type Mismatch"
+            pan_badge_col = "#EF4444"
+        else:
+            pan_status_text = "Valid Format (Company)" if is_corporate else "Valid Format (Proprietor)"
+            pan_badge_col = "#0F766E"
 
-        # 2. Live Underwriting Risk Scorecard HUD
+        # 2. Scorecard HUD section (if case scored)
         score_res = st.session_state.get("score_result")
+        score_section_html = ""
         if score_res is not None and score_res.final_verdict != Verdict.INSUFFICIENT_DATA:
             override_info = st.session_state.get("executive_override")
             is_overridden = bool(override_info and override_info.get("override_active"))
@@ -386,136 +357,121 @@ def render_sidebar() -> Dict[str, Any]:
             dscr_col = "#0F766E" if dscr_val >= 1.20 else "#EF4444"
             total_ded = sum(float(d.points_deducted) for d in score_res.deductions)
 
-            with st.container(border=True):
-                score_hud = f"""<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                    <span style="font-size: 10px; font-weight: 700; color: #0F766E; text-transform: uppercase; letter-spacing: 0.05em;">Live Scorecard HUD</span>
+            score_section_html = f"""<div style="padding: 10px 14px; border-bottom: 1px solid #E2E8F0; background: #FFFFFF;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <span style="font-size: 9.5px; font-weight: 700; color: #0F766E; text-transform: uppercase; letter-spacing: 0.05em;">Scorecard HUD</span>
                     {v_pill}
                 </div>
                 <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px;">
                     <div>
-                        <span style="font-size: 18px; font-weight: 800; color: #0B1F3A;">{c_score:.1f}</span>
-                        <span style="font-size: 10px; font-weight: 600; color: #64748B;">/ 100 pts</span>
+                        <span style="font-size: 19px; font-weight: 800; color: #0B1F3A;">{c_score:.1f}</span>
+                        <span style="font-size: 11px; font-weight: 600; color: #64748B;">/ 100</span>
                     </div>
-                    <span style="font-size: 9.5px; font-weight: 700; color: {score_col}; text-transform: uppercase;">{'PRIME' if c_score >= 70 else ('MODERATE' if c_score >= 50 else 'STRESSED')}</span>
+                    <span style="font-size: 10px; font-weight: 700; color: {score_col}; text-transform: uppercase;">{'PRIME' if c_score >= 70 else ('MODERATE' if c_score >= 50 else 'STRESSED')}</span>
                 </div>
-                <div style="background: #E2E8F0; border-radius: 9999px; height: 5px; width: 100%; overflow: hidden; margin-bottom: 6px;">
+                <div style="background: #E2E8F0; border-radius: 9999px; height: 5px; width: 100%; overflow: hidden; margin-bottom: 8px;">
                     <div style="background: {score_col}; width: {min(100.0, max(0.0, c_score))}%; height: 100%; border-radius: 9999px;"></div>
                 </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
                     <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 4px; padding: 4px 6px;">
-                        <div style="font-size: 8.5px; color: #64748B; font-weight: 600; text-transform: uppercase;">DSCR Cover</div>
-                        <div style="font-size: 11px; font-weight: 700; color: {dscr_col};">{dscr_val:.2f}x</div>
+                        <div style="font-size: 8.5px; color: #64748B; font-weight: 600; text-transform: uppercase;">DSCR at facility</div>
+                        <div style="font-size: 11.5px; font-weight: 700; color: {dscr_col}; margin-top: 1px;">{dscr_val:.2f}x</div>
                     </div>
                     <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 4px; padding: 4px 6px;">
                         <div style="font-size: 8.5px; color: #64748B; font-weight: 600; text-transform: uppercase;">Deductions</div>
-                        <div style="font-size: 11px; font-weight: 700; color: {'#EF4444' if total_ded > 0 else '#0F766E'};">-{total_ded:.1f} pts</div>
+                        <div style="font-size: 11.5px; font-weight: 700; color: {'#EF4444' if total_ded > 0 else '#0F766E'}; margin-top: 1px;">-{total_ded:.1f} pillar pts</div>
                     </div>
-                </div>"""
-                _render_html(score_hud)
-        else:
-            with st.container(border=True):
-                radar_idle = f"""<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                    <span style="font-size: 10px; font-weight: 700; color: #0F766E; text-transform: uppercase; letter-spacing: 0.05em;">Underwriting Radar</span>
-                    {status_pill("Intake Primed", variant="info")}
                 </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 4px;">
-                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 4px; padding: 4px 6px;">
-                        <div style="font-size: 8.5px; color: #64748B; font-weight: 600; text-transform: uppercase;">Entity Gate</div>
-                        <div style="font-size: 10.5px; font-weight: 700; color: #0F766E;">{'MCA-21 Vetted' if is_corporate else 'Proprietor Vetted'}</div>
-                    </div>
-                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 4px; padding: 4px 6px;">
-                        <div style="font-size: 8.5px; color: #64748B; font-weight: 600; text-transform: uppercase;">Filing Vault</div>
-                        <div style="font-size: 10.5px; font-weight: 700; color: #0F766E;">3 Docs Ready</div>
-                    </div>
-                </div>"""
-                _render_html(radar_idle)
-
-        # 3. Live Sanction Envelope HUD & 1-Click Ticket Simulator
-        ent_mode = "Corporate" if is_corporate else "Unincorporated"
-        ent_badge = status_pill(ent_mode, variant="info" if is_corporate else "neutral")
-        collat_chip = "CGTMSE" if cgtmse_cov else f"{cov_pct:.0f}%"
-        annual_debt_serv = emi_dec * Decimal("12")
-
-        with st.container(border=True):
-            terms_html = f"""<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                <span style="font-size: 10px; font-weight: 700; color: #0F766E; text-transform: uppercase; letter-spacing: 0.05em;">Sanction Terms</span>
-                {ent_badge}
-            </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 6px;">
-                <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 5px; padding: 5px 8px;">
-                    <div style="font-size: 9px; font-weight: 600; color: #94A3B8; text-transform: uppercase;">Facility</div>
-                    <div style="font-size: 12px; font-weight: 700; color: #0B1F3A;">₹ {loan_amt/100000:.1f}L</div>
-                </div>
-                <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 5px; padding: 5px 8px;">
-                    <div style="font-size: 9px; font-weight: 600; color: #94A3B8; text-transform: uppercase;">Rate p.a.</div>
-                    <div style="font-size: 12px; font-weight: 700; color: #0F766E;">{rate_val:.2f}%</div>
-                </div>
-                <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 5px; padding: 5px 8px;">
-                    <div style="font-size: 9px; font-weight: 600; color: #94A3B8; text-transform: uppercase;">Monthly EMI</div>
-                    <div style="font-size: 11px; font-weight: 700; color: #0B1F3A;">{format_inr(emi_dec)}</div>
-                </div>
-                <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 5px; padding: 5px 8px;">
-                    <div style="font-size: 9px; font-weight: 600; color: #94A3B8; text-transform: uppercase;">Security</div>
-                    <div style="font-size: 11px; font-weight: 700; color: #0F766E;">{collat_chip}</div>
-                </div>
-            </div>
-            <div style="background: #F8FAFC; border: 1px dashed #CBD5E1; border-radius: 4px; padding: 3px 6px; font-size: 10px; color: #64748B; display: flex; justify-content: space-between; margin-bottom: 6px;">
-                <span>Annual Outflow:</span>
-                <strong style="color: #0B1F3A;">{format_inr(annual_debt_serv)}</strong>
             </div>"""
-            _render_html(terms_html)
 
-            # Ticket Size Simulator Chips (Strictly st.button to maintain positional index compatibility)
-            st.markdown("<div style='font-size: 9px; font-weight: 700; color: #64748B; text-transform: uppercase; margin-bottom: 3px;'>Simulate Ticket:</div>", unsafe_allow_html=True)
-            col_sb1, col_sb2, col_sb3, col_sb4 = st.columns(4)
-            lbl_25 = "• 25L •" if abs(loan_amt - 2500000.0) < 1.0 else "25L"
-            lbl_50 = "• 50L •" if abs(loan_amt - 5000000.0) < 1.0 else "50L"
-            lbl_75 = "• 75L •" if abs(loan_amt - 7500000.0) < 1.0 else "75L"
-            lbl_1cr = "• 1Cr •" if abs(loan_amt - 10000000.0) < 1.0 else "1Cr"
+        # 3. Gateway Health (State-Derived Vision AI & Legal Radar)
+        has_gemini = bool(
+            (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"))
+            and (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")) != "your_gemini_api_key_here"
+        )
+        has_tavily = bool(
+            os.getenv("TAVILY_API_KEY")
+            and os.getenv("TAVILY_API_KEY") != "your_tavily_api_key_here"
+        )
+        ext_meta = st.session_state.get("extraction_meta")
+        if ext_meta and isinstance(ext_meta, dict) and "engine" in ext_meta:
+            engine_raw = str(ext_meta.get("engine", "")).lower()
+            if "gemini" in engine_raw:
+                engine_text = "Gemini Multimodal AI"
+            else:
+                engine_text = "Offline Parser"
+        elif has_gemini:
+            engine_text = "Gemini Multimodal AI"
+        else:
+            engine_text = "Offline Parser"
 
-            with col_sb1:
-                if st.button(lbl_25, key="sb_btn_pre_25l", width="stretch", help="Set facility to ₹25 Lakhs"):
-                    st.session_state.facility_loan_amount = 2500000.0
-                    st.session_state.loan_amount = 2500000.0
-                    st.rerun()
-            with col_sb2:
-                if st.button(lbl_50, key="sb_btn_pre_50l", width="stretch", help="Set facility to ₹50 Lakhs"):
-                    st.session_state.facility_loan_amount = 5000000.0
-                    st.session_state.loan_amount = 5000000.0
-                    st.rerun()
-            with col_sb3:
-                if st.button(lbl_75, key="sb_btn_pre_75l", width="stretch", help="Set facility to ₹75 Lakhs"):
-                    st.session_state.facility_loan_amount = 7500000.0
-                    st.session_state.loan_amount = 7500000.0
-                    st.rerun()
-            with col_sb4:
-                if st.button(lbl_1cr, key="sb_btn_pre_1cr", width="stretch", help="Set facility to ₹1.0 Crore"):
-                    st.session_state.facility_loan_amount = 10000000.0
-                    st.session_state.loan_amount = 10000000.0
-                    st.rerun()
+        if has_tavily and st.session_state.get("tgl_live_tavily_demo", False):
+            media_mode_text = "Live Registry Search"
+        else:
+            media_mode_text = "Curated Judicial Dockets"
 
-        # 4. Cryptographic Audit Seal Block (High-Density Telemetry Strip)
+        # 4. Cryptographic Audit Seal Block (with 12-hour AM/PM IST Time)
         is_chain_valid, chain_err = verify_chain(st.session_state.get("audit_trail", []))
         evt_count = len(st.session_state.get("audit_trail", []))
         chain_status_pill = status_pill("Verified Chain", variant="approve") if is_chain_valid else status_pill("Tampered", variant="reject")
         gen_hash = st.session_state["audit_trail"][0].get("current_hash", "")[:8] if (evt_count > 0 and "audit_trail" in st.session_state) else "e3b0c442"
         s_time = st.session_state.get("session_started_at", "Active")
+        if "UTC" in str(s_time) or ("AM" not in str(s_time) and "PM" not in str(s_time)):
+            s_time = datetime.now(IST).strftime("%I:%M %p IST").lstrip("0")
+            st.session_state.session_started_at = s_time
 
-        with st.container(border=True):
-            telemetry_html = f"""<div style="display: flex; justify-content: space-between; align-items: center; font-size: 10px;">
-                <div style="display: flex; align-items: center; gap: 5px;">
-                    <span style="color: #0F766E; font-weight: 700;">🔒 AUDIT SEAL</span>
-                    <span style="color: #64748B;">• {evt_count} Blocks</span>
+        # Consolidated Single Continuous Stream Card
+        telemetry_stream = f"""<div style="background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 8px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04); overflow: hidden; margin-bottom: 12px;">
+            <div style="padding: 12px 14px 10px 14px; border-bottom: 1px solid #E2E8F0; background: #FFFFFF;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 15px; font-weight: 800; color: #0B1F3A; letter-spacing: 0.05em; line-height: 1.1;">CREDITGATE</span>
+                    <span style="font-size: 10px; font-weight: 700; color: #0F766E; background: #CCFBF1; border: 1px solid #99F6E4; border-radius: 4px; padding: 2px 7px; font-family: monospace;">{short_app_id}</span>
                 </div>
-                <div>{chain_status_pill}</div>
+                <div style="font-size: 11px; font-weight: 600; color: #64748B; margin-top: 3px;">Commercial Underwriting Copilot</div>
             </div>
-            <div style="font-size: 9px; color: #94A3B8; font-family: monospace; margin-top: 3px; display: flex; justify-content: space-between;">
-                <span>Root: <strong style="color: #0F766E;">{gen_hash}...</strong></span>
-                <span>Session: {s_time}</span>
-            </div>"""
-            _render_html(telemetry_html)
 
-        # 5. Reset Case Button
+            <div style="padding: 10px 14px; border-bottom: 1px solid #E2E8F0; border-left: 3px solid #0F766E; background: #FAFCFD;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <span style="font-size: 9px; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: 0.06em;">Active Dossier</span>
+                    {entity_pill}
+                </div>
+                <div style="font-size: 13px; font-weight: 700; color: #0B1F3A; line-height: 1.3;">{company_name}</div>
+                <div style="margin-top: 6px; padding-top: 5px; border-top: 1px dashed #E2E8F0; font-size: 9.5px; color: #64748B; line-height: 1.4;">
+                    <div>• CIN: <span style="color: {cin_badge_col}; font-weight: 600;">{cin_status_text}</span></div>
+                    <div>• PAN: <span style="color: {pan_badge_col}; font-weight: 600;">{pan_status_text}</span></div>
+                </div>
+            </div>
+
+            {score_section_html}
+
+            <div style="padding: 10px 14px; border-bottom: 1px solid #E2E8F0; background: #FFFFFF; font-size: 10.5px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <span style="color: #64748B; font-weight: 600;">Vision AI:</span>
+                    <span style="color: #0F766E; font-weight: 700;">● {engine_text}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: #64748B; font-weight: 600;">Legal Radar:</span>
+                    <span style="color: #0F766E; font-weight: 700;">● {media_mode_text}</span>
+                </div>
+            </div>
+
+            <div style="padding: 10px 14px 12px 14px; background: #F8FAFC;">
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px;">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <span style="color: #0F766E; font-weight: 700; letter-spacing: 0.05em;">AUDIT SEAL</span>
+                        <span style="color: #64748B; font-size: 10.5px; font-weight: 500;">• {evt_count} Blocks</span>
+                    </div>
+                    <div>{chain_status_pill}</div>
+                </div>
+                <div style="font-size: 10px; color: #64748B; font-family: monospace; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #E2E8F0; display: flex; justify-content: space-between; align-items: center;">
+                    <span>Root: <strong style="color: #0F766E;">{gen_hash}...</strong></span>
+                    <span>Session: <strong style="color: #0B1F3A;">{s_time}</strong></span>
+                </div>
+            </div>
+        </div>"""
+        _render_html(telemetry_stream)
+
+        # 5. Reset Active Dossier
         if st.button(":material/restart_alt: Reset Active Dossier", key="sb_btn_reset_case", width="stretch", help="Resets locks, extraction caches, and overrides while keeping the selected cohort"):
             cur_cohort = st.session_state.get("active_cohort_selection", "Cohort 1: Prime MSME (Apex Synthetic Demo)")
             select_and_reset_cohort(cur_cohort)
@@ -583,8 +539,8 @@ def get_app_context() -> Dict[str, Any]:
     loan_amount = float(st.session_state.get("facility_loan_amount", 5000000.0))
     tenure_months = int(st.session_state.get("facility_tenure_months", 36))
     interest_rate = float(st.session_state.get("facility_interest_rate", 11.5))
-    collateral_val = float(st.session_state.get("facility_collateral_val", 0.0))
-    cgtmse_covered = bool(st.session_state.get("facility_cgtmse_covered", True))
+    collateral_val = float(st.session_state.get("facility_collateral_val", 2500000.0))
+    cgtmse_covered = bool(st.session_state.get("facility_cgtmse_covered", False))
 
     computed_monthly_emi = calculate_monthly_emi(
         principal=Decimal(str(loan_amount)),
@@ -622,7 +578,11 @@ def get_app_context() -> Dict[str, Any]:
 
     has_all_docs = (bank_bytes is not None) and (gst_bytes is not None) and (itr_bytes is not None)
 
+    app_id = st.session_state.get("app_id") or generate_application_id("Apex Synthetic Holdings (Demo)")
+    st.session_state.app_id = app_id
+
     ctx = {
+        "app_id": app_id,
         "cohort_selection": cohort_selection,
         "cohort_name": cohort_name,
         "company_name": COHORT_COMPANY_NAMES.get(cohort_selection, "Manual Applicant Company"),

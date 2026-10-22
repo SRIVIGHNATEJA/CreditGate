@@ -15,6 +15,7 @@ Palette:
 """
 
 import html
+import re
 from typing import Optional, List, Dict, Any
 import streamlit as st
 
@@ -108,7 +109,10 @@ def kpi_card(
     subtext: Optional[str] = None,
     delta: Optional[str] = None,
     delta_color: str = "neutral",
-    tooltip: Optional[str] = None
+    tooltip: Optional[str] = None,
+    border_left: Optional[str] = None,
+    border_top: Optional[str] = None,
+    badge: Optional[str] = None,
 ) -> str:
     """
     Renders a standardized, non-wrapping KPI card conforming to the Calm Institutional palette.
@@ -136,9 +140,27 @@ def kpi_card(
     elif clean_subtext:
         delta_html = f"""<div style="font-size: 11px; font-weight: 500; color: {COLOR_TEXT_MUTED}; margin-top: 4px; white-space: nowrap;">{clean_subtext}</div>"""
 
+    badge_html = ""
+    if badge:
+        b_color = border_left or border_top or COLOR_TEAL
+        badge_html = f"""<span style="font-size: 8.5px; font-weight: 700; color: {b_color}; background: #F1F5F9; border: 1px solid #E2E8F0; padding: 1px 5px; border-radius: 4px; letter-spacing: 0.04em;">{_escape(badge)}</span>"""
+
+    header_html = f"""<div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: {COLOR_TEXT_MUTED}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px;">{clean_label}</div>"""
+    if badge_html:
+        header_html = f"""<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; gap: 4px;">
+            <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: {COLOR_TEXT_MUTED}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{clean_label}</div>
+            {badge_html}
+        </div>"""
+
+    border_styles = f"border: 1px solid {COLOR_BORDER};"
+    if border_left:
+        border_styles += f" border-left: 3.5px solid {border_left};"
+    if border_top:
+        border_styles += f" border-top: 3.5px solid {border_top};"
+
     return _clean_html(f"""<div {title_attr} style="
-        background-color: {COLOR_SURFACE};
-        border: 1px solid {COLOR_BORDER};
+        background-color: #FFFFFF;
+        {border_styles}
         border-radius: 8px;
         padding: 12px 14px;
         box-sizing: border-box;
@@ -148,18 +170,9 @@ def kpi_card(
         min-height: 86px;
         width: 100%;
         margin-bottom: 8px;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
     ">
-        <div style="
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: {COLOR_TEXT_MUTED};
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            margin-bottom: 4px;
-        ">{clean_label}</div>
+        {header_html}
         <div style="
             font-size: 20px;
             font-weight: 700;
@@ -180,10 +193,23 @@ def render_kpi_card(
     subtext: Optional[str] = None,
     delta: Optional[str] = None,
     delta_color: str = "neutral",
-    tooltip: Optional[str] = None
+    tooltip: Optional[str] = None,
+    border_left: Optional[str] = None,
+    border_top: Optional[str] = None,
+    badge: Optional[str] = None,
 ):
     """Convenience helper to render KPI card directly into Streamlit."""
-    _render_html(kpi_card(label, value, subtext=subtext, delta=delta, delta_color=delta_color, tooltip=tooltip))
+    _render_html(kpi_card(
+        label,
+        value,
+        subtext=subtext,
+        delta=delta,
+        delta_color=delta_color,
+        tooltip=tooltip,
+        border_left=border_left,
+        border_top=border_top,
+        badge=badge,
+    ))
 
 
 # ============================================================================
@@ -193,7 +219,9 @@ def render_kpi_card(
 def callout(
     message: str,
     title: Optional[str] = None,
-    variant: str = "info"
+    variant: str = "info",
+    margin: Optional[str] = None,
+    padding: Optional[str] = None
 ) -> str:
     """
     Renders a compact, institutional callout box replacing full-width st.success/warning/error.
@@ -201,6 +229,12 @@ def callout(
     """
     clean_msg = _escape(message)
     clean_title = _escape(title) if title else ""
+    
+    # Render inline bolding and paragraphs safely after HTML escaping
+    clean_msg = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', clean_msg)
+    clean_msg = clean_msg.replace('\n\n', '<div style="margin-top: 6px;"></div>').replace('\n', '<br>')
+    if clean_title:
+        clean_title = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', clean_title)
     variant = variant.lower()
 
     if variant in ("success", "approve"):
@@ -226,13 +260,15 @@ def callout(
 
     title_html = f"""<div style="font-weight: 700; color: {COLOR_NAVY}; margin-bottom: 2px;">{clean_title}</div>""" if clean_title else ""
 
+    c_margin = margin if margin is not None else "8px 0"
+    c_padding = padding if padding is not None else "10px 14px"
     return _clean_html(f"""<div style="
         background-color: {bg};
         border: 1px solid {border};
         border-left: 4px solid {accent};
         border-radius: 6px;
-        padding: 10px 14px;
-        margin: 8px 0;
+        padding: {c_padding};
+        margin: {c_margin};
         display: flex;
         align-items: flex-start;
         gap: 12px;
@@ -249,10 +285,12 @@ def callout(
 def render_callout(
     message: str,
     title: Optional[str] = None,
-    variant: str = "info"
+    variant: str = "info",
+    margin: Optional[str] = None,
+    padding: Optional[str] = None
 ):
     """Convenience helper to render callout directly into Streamlit."""
-    _render_html(callout(message, title=title, variant=variant))
+    _render_html(callout(message, title=title, variant=variant, margin=margin, padding=padding))
 
 
 # ============================================================================
@@ -433,8 +471,7 @@ def stepper(current_step: str = "Case", steps: Optional[List[str]] = None) -> st
             step_completed = False
 
         if is_active:
-            # Active step styling
-            circle_content = "✓" if step_completed else str(step_num)
+            # Active step styling: CURRENT PAGE is active
             circle = f"""<span style="
                 display: inline-flex;
                 align-items: center;
@@ -447,7 +484,7 @@ def stepper(current_step: str = "Case", steps: Optional[List[str]] = None) -> st
                 font-size: 11px;
                 font-weight: 700;
                 margin-right: 8px;
-            ">{circle_content}</span>"""
+            ">{step_num}</span>"""
             label_style = f"font-size: 13px; font-weight: 700; color: {COLOR_NAVY}; border-bottom: 2px solid {COLOR_TEAL}; padding-bottom: 2px;"
         elif step_completed:
             # Completed inactive step
