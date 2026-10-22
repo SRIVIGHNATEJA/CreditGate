@@ -3,7 +3,7 @@ from ui.state import init_session_state, render_sidebar
 from ui.components import render_stepper
 
 # ----------------------------------------------------------------------------
-# 1. PAGE CONFIGURATION & ENTERPRISE STYLING (CALM INSTITUTIONAL PALETTE)
+# 1. PAGE CONFIGURATION & INSTITUTIONAL STYLING (CALM INSTITUTIONAL PALETTE)
 # ----------------------------------------------------------------------------
 
 st.set_page_config(
@@ -15,6 +15,16 @@ st.set_page_config(
 
 st.markdown("""
 <style>
+    /* Executive Viewport & Top Padding Optimization */
+    .block-container {
+        padding-top: 1.75rem !important;
+        padding-bottom: 3rem !important;
+    }
+    header[data-testid=stHeader] {
+        height: 2.25rem !important;
+        background: transparent !important;
+    }
+
     /* Typography & Core Palette */
     html, body, [class*="css"] {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -147,24 +157,25 @@ st.markdown("""
 
     /* Institutional Sidebar Ribbon Aesthetics */
     section[data-testid="stSidebar"] {
+        min-width: 335px !important;
         background: linear-gradient(180deg, #F8FAFC 0%, #F1F5F9 100%) !important;
-        border-right: 1px solid #E2E8F0 !important;
-        box-shadow: 2px 0 16px rgba(15, 23, 42, 0.04) !important;
+        border-right: 1px solid #CBD5E1 !important;
+        box-shadow: 2px 0 16px rgba(15, 23, 42, 0.05) !important;
     }
     section[data-testid="stSidebar"] div[data-testid="stSidebarHeader"] {
         padding-bottom: 0px !important;
     }
     section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] {
         padding-top: 6px !important;
-        margin-bottom: 10px !important;
+        margin-bottom: 12px !important;
     }
     section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] a {
         border-radius: 6px !important;
-        margin: 2px 4px !important;
-        padding: 7px 12px !important;
-        font-size: 13px !important;
-        font-weight: 500 !important;
-        color: #475569 !important;
+        margin: 3px 4px !important;
+        padding: 8px 14px !important;
+        font-size: 13.5px !important;
+        font-weight: 600 !important;
+        color: #334155 !important;
         transition: all 0.15s ease-in-out !important;
     }
     section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] a:hover {
@@ -182,14 +193,34 @@ st.markdown("""
         color: #FFFFFF !important;
     }
     section[data-testid="stSidebar"] hr {
-        margin: 10px 0 !important;
-        border-top: 1px solid #E2E8F0 !important;
+        margin: 12px 0 !important;
+        border-top: 1px solid #CBD5E1 !important;
     }
     section[data-testid="stSidebar"] div[data-testid="stVerticalBlockBorderWrapper"] {
         background: #FFFFFF !important;
-        border: 1px solid #E2E8F0 !important;
+        border: 1px solid #CBD5E1 !important;
         border-radius: 8px !important;
-        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03) !important;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04) !important;
+        margin-bottom: 12px !important;
+    }
+    section[data-testid="stSidebar"] div[data-testid="stVerticalBlockBorderWrapper"] > div {
+        padding: 10px 14px 12px 14px !important;
+    }
+    section[data-testid="stSidebar"] button[data-testid="stBaseButton-secondary"] {
+        border-radius: 6px !important;
+        font-weight: 700 !important;
+        font-size: 13px !important;
+        color: #334155 !important;
+        border: 1px solid #CBD5E1 !important;
+        background: #FFFFFF !important;
+        padding: 8px 14px !important;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+        transition: all 0.15s ease-in-out !important;
+    }
+    section[data-testid="stSidebar"] button[data-testid="stBaseButton-secondary"]:hover {
+        background: #F1F5F9 !important;
+        border-color: #0F766E !important;
+        color: #0F766E !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -202,17 +233,7 @@ init_session_state()
 ctx = render_sidebar()
 
 # ----------------------------------------------------------------------------
-# 3. HEADER & PERSISTENT STEPPER
-# ----------------------------------------------------------------------------
-
-st.markdown('<div class="main-title">CreditGate: AI MSME Underwriting Copilot</div>', unsafe_allow_html=True)
-# Standard 4-page navigation pipeline:
-# 1. Case | 2. Evidence | 3. Decision | 4. CAM & Audit
-active_workflow_stage = st.session_state.get("current_page", "Case")
-render_stepper(active_workflow_stage)
-
-# ----------------------------------------------------------------------------
-# 4. MULTI-PAGE ROUTING VIA st.navigation
+# 3. MULTI-PAGE ROUTING & PERSISTENT STEPPER
 # ----------------------------------------------------------------------------
 
 pages = [
@@ -222,4 +243,12 @@ pages = [
     st.Page("app_pages/cam_audit.py", title="CAM & Audit", icon=":material/description:"),
 ]
 pg = st.navigation(pages)
+
+st.markdown('<div class="main-title">CreditGate: AI MSME Underwriting Copilot</div>', unsafe_allow_html=True)
+# Standard 4-page navigation pipeline synchronized with current router destination:
+# 1. Case | 2. Evidence | 3. Decision | 4. CAM & Audit
+active_workflow_stage = getattr(pg, "title", None) or st.session_state.get("current_page", "Case")
+st.session_state.current_page = active_workflow_stage
+render_stepper(active_workflow_stage)
+
 pg.run()

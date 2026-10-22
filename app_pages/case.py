@@ -1,6 +1,6 @@
 import streamlit as st
 from decimal import Decimal
-from ui.state import get_app_context, record_event, select_and_reset_cohort
+from ui.state import get_app_context, record_event, select_and_reset_cohort, reset_facility_to_defaults
 from ui.components import render_kpi_card, render_callout, status_pill, _render_html
 from core.formatting import format_inr
 from core.onboarding import validate_cin_syntax, parse_cin, check_entity_consistency, NIC_SECTOR_TAXONOMY
@@ -18,18 +18,143 @@ tenure_months = ctx["tenure_months"]
 interest_rate = ctx["interest_rate"]
 proposed_emi = ctx["proposed_emi"]
 cohort_selection = ctx["cohort_selection"]
+active_cohort = cohort_selection
 
-st.markdown("### Case Gallery & Applicant Profile")
-st.caption("Select a pre-configured synthetic underwriting scenario or review active borrower onboarding parameters.")
+# Synchronize active facility terms with locked case (prevents decision scorecard desync)
+if st.session_state.get("locked_case") is not None:
+    _lc = st.session_state.locked_case
+    _cur_p = Decimal(str(loan_amount))
+    _cur_r = Decimal(str(interest_rate))
+    _cur_n = int(tenure_months)
+    if (_lc.requested_loan_amount != _cur_p or 
+        _lc.proposed_rate != _cur_r or 
+        _lc.proposed_tenure_months != _cur_n):
+        from core.analyser import calculate_monthly_emi
+        _lc.requested_loan_amount = _cur_p
+        _lc.proposed_rate = _cur_r
+        _lc.proposed_tenure_months = _cur_n
+        # Preserve locked_financials_hash; score_result=None marks score as stale awaiting re-run
+        st.session_state.score_result = None
+        st.session_state.cam_markdown = None
 
-msg = st.session_state.get("lock_cleared_message")
-if msg:
-    if st.session_state.get("_toast_shown_for") == msg:
-        st.session_state.lock_cleared_message = None
-        st.session_state._toast_shown_for = None
-    else:
-        st.toast(msg, icon="🔄")
-        st.session_state._toast_shown_for = msg
+@st.cache_data
+def get_computed_cohort_gallery_metrics() -> dict:
+    """
+    Computes DSCR, bounces, GST-bank gap, and real deciding signals per cohort
+    from the actual synthetic ground-truth data at the app's default facility terms.
+    Default facility: ₹50 Lakhs @ 11.50% for 36 months, ₹25 Lakhs collateral, no CGTMSE.
+    """
+    from decimal import Decimal
+    from pathlib import Path
+    import json
+    from core.data_models import CreditCase, BankExtraction, GSTExtraction, ITRExtraction
+    from core.onboarding import parse_cin, check_entity_consistency
+    from core.analyser import calculate_monthly_emi, calculate_accrual_cash_gap
+    from core.scorer import score_credit_case
+
+    base_dir = Path(__file__).resolve().parent.parent / "data" / "synthetic"
+    loan_amt = Decimal("5000000.00")
+    rate = Decimal("11.50")
+    tenure = 36
+    emi = calculate_monthly_emi(loan_amt, rate, tenure)
+    collat = Decimal("2500000.00")
+
+    cohort_configs = [
+        ("c1", "cohort_1_prime", "U29253DL2018PTC334120", "AAACA1234B", "Apex Synthetic Holdings (Demo)"),
+        ("c2", "cohort_2_distressed", "U60200KA2019PTC120481", "AAACK5678M", "Kaveri Fictitious Freight (Demo)"),
+        ("c3", "cohort_3_mismatch", "U24101MH2020PTC349120", "AABFB8910N", "Bharat Mock Steels & Infra (Demo)"),
+    ]
+
+    metrics = {}
+    for key, folder, cin, pan, cname in cohort_configs:
+        gt_file = base_dir / folder / "ground_truth.json"
+        with open(gt_file, "r") as f:
+            gt = json.load(f)
+
+        case = CreditCase(
+            company_name=cname,
+            cin_or_pan=cin,
+            requested_loan_amount=loan_amt,
+            proposed_emi=emi,
+            proposed_rate=rate,
+            proposed_tenure_months=tenure,
+            bank_data=BankExtraction(
+                total_credits=Decimal(gt["bank"]["total_credits"]),
+                total_debits=Decimal(gt["bank"]["total_debits"]),
+                opening_balance=Decimal(gt["bank"]["opening_balance"]),
+                closing_balance=Decimal(gt["bank"]["closing_balance"]),
+                bounce_count=int(gt["bank"]["bounce_count"]),
+                confidence="HIGH",
+            ),
+            gst_data=GSTExtraction(
+                taxable_value=Decimal(gt["gst"]["taxable_value"]),
+                total_tax_paid=Decimal(gt["gst"]["total_tax_paid"]),
+                confidence="HIGH",
+            ),
+            itr_data=ITRExtraction(
+                gross_total_income=Decimal(gt["itr"]["gross_total_income"]),
+                profit_after_tax=Decimal(gt["itr"]["profit_after_tax"]),
+                depreciation=Decimal(gt["itr"]["depreciation"]),
+                interest_paid=Decimal(gt["itr"]["interest_paid"]),
+                net_worth=Decimal(gt["itr"]["net_worth"]),
+                total_debt=Decimal(gt["itr"]["total_debt"]),
+                existing_emi_obligations=Decimal(gt["itr"]["existing_emi_obligations"]),
+                confidence="HIGH",
+            ),
+        )
+
+        cin_data = parse_cin(cin)
+        pan_chk = check_entity_consistency(pan, is_corporate=True)
+        res = score_credit_case(
+            case,
+            business_vintage_years=cin_data["business_vintage_years"] if cin_data else 5,
+            pan_entity_mismatch=pan_chk.get("mismatch_detected", False),
+            collateral_value=collat,
+            cgtmse_covered=False,
+        )
+
+        gap_ratio, _ = calculate_accrual_cash_gap(case.gst_data.taxable_value, case.bank_data.total_credits)
+        gap_pct = float(gap_ratio * 100) if gap_ratio is not None else 0.0
+
+        if key == "c1":
+            signal = f"All policy risk thresholds satisfied; 0 mandate bounces, DSCR {res.dscr:.2f}x at selected facility, balanced ledger."
+        elif key == "c2":
+            signal = f"{case.bank_data.bounce_count} mandate bounces enforce hard policy knockout ({res.knockout_applied}: CHARACTER pillar)."
+        else:
+            signal = "GST turnover vs bank credits gap -> Conditions below 40 -> weakest-link cap (plus PAN/entity mismatch)"
+
+        metrics[key] = {
+            "dscr": f"{res.dscr:.2f}x",
+            "dscr_val": float(res.dscr),
+            "bounces": case.bank_data.bounce_count,
+            "gap": f"{gap_pct:.1f}%",
+            "verdict": res.final_verdict.name,
+            "deciding_signal": signal,
+        }
+
+    return metrics
+
+
+gallery_metrics = get_computed_cohort_gallery_metrics()
+c1_m = gallery_metrics["c1"]
+c2_m = gallery_metrics["c2"]
+c3_m = gallery_metrics["c3"]
+
+col_header_title, col_header_action = st.columns([3, 1], vertical_alignment="center")
+with col_header_title:
+    st.markdown("### Case Gallery & Applicant Profile")
+
+with col_header_action:
+    is_custom = (cohort_selection == "None (Manual Upload)")
+    if st.button(
+        "📁 New Custom Intake" if not is_custom else "✓ Custom Intake Active",
+        key="btn_trigger_custom_intake",
+        width="stretch",
+        type="primary" if is_custom else "secondary",
+        help="Switch to manual document ingestion for custom borrower analysis",
+    ):
+        select_and_reset_cohort("None (Manual Upload)")
+        st.rerun()
 
 # ----------------------------------------------------------------------------
 # 1. CASE GALLERY (LANDING VIEW: 3 CARDS + COHORT SELECTOR)
@@ -45,11 +170,11 @@ with g_col1:
         border_c1 = "border: 2px solid #15803D;" if is_c1 else ""
         st.markdown(f'<div style="height: 4px; background: #15803D; border-radius: 2px; margin-bottom: 6px; {border_c1}"></div>', unsafe_allow_html=True)
         st.markdown('<div style="font-size: 10px; font-weight: 700; color: #15803D; letter-spacing: 0.05em; text-transform: uppercase;">Archetype: Tier-1 Prime MSME</div>', unsafe_allow_html=True)
-        c1_chip = f" &nbsp; {status_pill('ACTIVE', variant='info')}" if is_c1 else ""
+        c1_chip = f" &nbsp; {status_pill('Selected', variant='info')}" if is_c1 else ""
         st.markdown(f"**1. Prime MSME**{c1_chip}", unsafe_allow_html=True)
-        st.markdown(f"**Apex Synthetic Holdings (Demo)** &nbsp; {status_pill('APPROVE', variant='approve') if is_corporate else status_pill('OFF', variant='neutral')}", unsafe_allow_html=True)
-        st.markdown("<div style='font-size: 11px; color: #0F766E; font-weight: 600; margin: 4px 0;'>DSCR: 1.62x &nbsp;•&nbsp; Bounces: 0 &nbsp;•&nbsp; Gap: 5.2%</div>", unsafe_allow_html=True)
-        st.caption("Deciding Signal: Clean banking, 0 mandate bounces, DSCR 1.62x, balanced ledger.")
+        st.markdown(f"<div style='font-size: 14px; font-weight: 700; color: #0B1F3A; margin: 2px 0 4px 0;'>Apex Synthetic Holdings (Demo) &nbsp; {status_pill('APPROVE', variant='approve') if is_corporate else status_pill('OFF', variant='neutral')}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size: 13px; color: #1E293B; font-weight: 600; margin: 6px 0; line-height: 1.4;'>DSCR at selected facility: {c1_m['dscr']} &nbsp;•&nbsp; Bounces: {c1_m['bounces']} &nbsp;•&nbsp; Gap: {c1_m['gap']}</div>", unsafe_allow_html=True)
+        st.caption(f"Deciding Signal: {c1_m['deciding_signal']}")
         st.button(
             "Selected (Active)" if is_c1 else "Open Case",
             key="btn_open_prime",
@@ -64,11 +189,11 @@ with g_col2:
         border_c2 = "border: 2px solid #B91C1C;" if is_c2 else ""
         st.markdown(f'<div style="height: 4px; background: #B91C1C; border-radius: 2px; margin-bottom: 6px; {border_c2}"></div>', unsafe_allow_html=True)
         st.markdown('<div style="font-size: 10px; font-weight: 700; color: #B91C1C; letter-spacing: 0.05em; text-transform: uppercase;">Archetype: Distressed Logistics</div>', unsafe_allow_html=True)
-        c2_chip = f" &nbsp; {status_pill('ACTIVE', variant='info')}" if is_c2 else ""
+        c2_chip = f" &nbsp; {status_pill('Selected', variant='info')}" if is_c2 else ""
         st.markdown(f"**2. Distressed**{c2_chip}", unsafe_allow_html=True)
-        st.markdown(f"**Kaveri Fictitious Freight (Demo)** &nbsp; {status_pill('REJECT', variant='reject') if is_corporate else status_pill('OFF', variant='neutral')}", unsafe_allow_html=True)
-        st.markdown("<div style='font-size: 11px; color: #B91C1C; font-weight: 600; margin: 4px 0;'>DSCR: 0.82x &nbsp;•&nbsp; Bounces: 5 &nbsp;•&nbsp; Gap: 12.1%</div>", unsafe_allow_html=True)
-        st.caption("Deciding Signal: 5 mandate bounces enforce hard policy knockout (BOUNCE_KNOCKOUT).")
+        st.markdown(f"<div style='font-size: 14px; font-weight: 700; color: #0B1F3A; margin: 2px 0 4px 0;'>Kaveri Fictitious Freight (Demo) &nbsp; {status_pill('REJECT', variant='reject') if is_corporate else status_pill('OFF', variant='neutral')}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size: 13px; color: #1E293B; font-weight: 600; margin: 6px 0; line-height: 1.4;'>DSCR at selected facility: {c2_m['dscr']} &nbsp;•&nbsp; Bounces: {c2_m['bounces']} &nbsp;•&nbsp; Gap: {c2_m['gap']}</div>", unsafe_allow_html=True)
+        st.caption(f"Deciding Signal: {c2_m['deciding_signal']}")
         st.button(
             "Selected (Active)" if is_c2 else "Open Case",
             key="btn_open_distressed",
@@ -83,11 +208,11 @@ with g_col3:
         border_c3 = "border: 2px solid #B45309;" if is_c3 else ""
         st.markdown(f'<div style="height: 4px; background: #B45309; border-radius: 2px; margin-bottom: 6px; {border_c3}"></div>', unsafe_allow_html=True)
         st.markdown('<div style="font-size: 10px; font-weight: 700; color: #B45309; letter-spacing: 0.05em; text-transform: uppercase;">Archetype: High-Turnover Trader</div>', unsafe_allow_html=True)
-        c3_chip = f" &nbsp; {status_pill('ACTIVE', variant='info')}" if is_c3 else ""
+        c3_chip = f" &nbsp; {status_pill('Selected', variant='info')}" if is_c3 else ""
         st.markdown(f"**3. Mismatch Trap**{c3_chip}", unsafe_allow_html=True)
-        st.markdown(f"**Bharat Mock Steels & Infra (Demo)** &nbsp; {status_pill('CONDITIONAL', variant='conditional') if is_corporate else status_pill('OFF', variant='neutral')}", unsafe_allow_html=True)
-        st.markdown("<div style='font-size: 11px; color: #B45309; font-weight: 600; margin: 4px 0;'>DSCR: 1.15x &nbsp;•&nbsp; Bounces: 1 &nbsp;•&nbsp; Gap: 24.5%</div>", unsafe_allow_html=True)
-        st.caption("Deciding Signal: ₹14.5 Cr turnover vs thin ₹18L PAT triggers WEAKEST_LINK_CAP (< 40.0).")
+        st.markdown(f"<div style='font-size: 14px; font-weight: 700; color: #0B1F3A; margin: 2px 0 4px 0;'>Bharat Mock Steels & Infra (Demo) &nbsp; {status_pill('CONDITIONAL', variant='conditional') if is_corporate else status_pill('OFF', variant='neutral')}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size: 13px; color: #1E293B; font-weight: 600; margin: 6px 0; line-height: 1.4;'>DSCR at selected facility: {c3_m['dscr']} &nbsp;•&nbsp; Bounces: {c3_m['bounces']} &nbsp;•&nbsp; Gap: {c3_m['gap']}</div>", unsafe_allow_html=True)
+        st.caption(f"Deciding Signal: {c3_m['deciding_signal']}")
         st.button(
             "Selected (Active)" if is_c3 else "Open Case",
             key="btn_open_mismatch",
@@ -97,36 +222,25 @@ with g_col3:
             width="stretch",
         )
 
-cohort_options = [
-    "None (Manual Upload)",
-    "Cohort 1: Prime MSME (Apex Synthetic Demo)",
-    "Cohort 2: Distressed (Kaveri Fictitious Demo)",
-    "Cohort 3: Mismatch Trap (Bharat Mock Demo)",
-]
-active_cohort = st.session_state.get("active_cohort_selection", cohort_options[1])
-active_idx = cohort_options.index(active_cohort) if active_cohort in cohort_options else 1
-with st.expander("🛠️ Controls", expanded=False):
-    if "case_cohort_select" in st.session_state:
-        selected_cohort = st.selectbox("Quick-Load Test Cohort", cohort_options, key="case_cohort_select")
-    else:
-        selected_cohort = st.selectbox("Quick-Load Test Cohort", cohort_options, index=active_idx, key="case_cohort_select")
-    if selected_cohort != active_cohort:
-        select_and_reset_cohort(selected_cohort)
-        st.rerun()
-
-st.markdown("---")
-
 # ----------------------------------------------------------------------------
 # 2. BORROWER PROFILE & FACILITY TERMS (SIDE-BY-SIDE per B1)
 # ----------------------------------------------------------------------------
+st.markdown("""
+<style>
+div[data-testid="stColumn"] div[data-testid="stVerticalBlock"] > div:first-child h4 {
+    margin-top: 0px !important;
+    margin-bottom: 6px !important;
+}
+</style>
+""", unsafe_allow_html=True)
 col_borrower, col_facility = st.columns([1, 1], gap="medium")
 
 # LEFT COLUMN: BORROWER PROFILE
 with col_borrower:
     if is_corporate:
-        # 1. ACTIVE CORPORATE VIEW (Crisp MCA-21 Dossier)
+        # 1. CORPORATE VIEW (Crisp MCA-21 Dossier)
         with st.container(border=True):
-            st.markdown(f"#### :material/domain: Borrower Master Dossier (MCA-21) &nbsp; {status_pill('ACTIVE', variant='approve')}", unsafe_allow_html=True)
+            st.markdown("#### :material/domain: Borrower Master Dossier (MCA-21)", unsafe_allow_html=True)
             is_corp = st.toggle("Registered Corporate? (MCA CIN)", value=True, key="case_is_corporate")
 
             if is_corp != is_corporate:
@@ -184,17 +298,19 @@ with col_borrower:
             is_cin_valid, cin_err = validate_cin_syntax(cin_val)
             if not is_cin_valid:
                 if active_cohort == "None (Manual Upload)" and (not cin_val or cin_val == "UNREGISTERED_MSME"):
-                    render_callout("Awaiting manual corporate CIN specification or registry document upload.", title="Manual Intake Mode", variant="info")
+                    render_callout("Awaiting manual corporate CIN specification or registry document upload.", title="Manual Intake Mode", variant="info", padding="6px 12px", margin="4px 0 8px 0")
                 else:
-                    render_callout(cin_err, title="Invalid CIN Format", variant="error")
+                    render_callout(cin_err, title="Invalid CIN Format", variant="error", padding="6px 12px", margin="4px 0 8px 0")
             else:
                 render_callout(
-                    f"MCA Valid: {cin_parsed_data['state_name']} | Vintage: {cin_parsed_data['business_vintage_years']} Years",
-                    title="MCA Validated",
+                    f"State: {cin_parsed_data['state_name']} | Vintage: {cin_parsed_data['business_vintage_years']} Years",
+                    title="MCA-21 Registry Verified",
                     variant="success",
+                    padding="6px 12px",
+                    margin="4px 0 8px 0",
                 )
                 if cin_parsed_data.get("low_vintage_risk_flag"):
-                    render_callout("Business vintage < 3 years indicates elevated early-stage default risk.", title="Vintage Warning", variant="warning")
+                    render_callout("Business vintage < 3 years indicates elevated early-stage default risk.", title="Vintage Warning", variant="warning", padding="6px 12px", margin="4px 0 8px 0")
 
             pan_val = st.text_input("Permanent Account Number (PAN)", value=ctx["pan_input"], key="case_pan_input")
             if pan_val.strip().upper() != ctx["pan_input"].strip().upper():
@@ -219,24 +335,38 @@ with col_borrower:
 
             if not pan_check.get("is_valid", False):
                 if active_cohort == "None (Manual Upload)" and not pan_val.strip():
-                    render_callout("Awaiting manual PAN specification or financial extraction.", title="Manual Intake Mode", variant="info")
+                    render_callout("Awaiting manual PAN specification or financial extraction.", title="Manual Intake Mode", variant="info", padding="6px 12px", margin="4px 0 8px 0")
                 else:
-                    render_callout(pan_check.get("error", "Invalid PAN Format"), title="Invalid PAN Format", variant="error")
+                    render_callout(pan_check.get("error", "Invalid PAN Format"), title="Invalid PAN Format", variant="error", padding="6px 12px", margin="4px 0 8px 0")
             elif pan_check.get("mismatch_detected", False):
-                render_callout(pan_check.get("warning_message", ""), title="Consistency Alert", variant="error")
+                render_callout(
+                    f"Declared Corporate ({cin_parsed_data['entity_code'] if cin_parsed_data else 'PTC'}) vs PAN '{pan_check.get('pan_entity_char')}' ({pan_check.get('pan_entity_type')}).",
+                    title="Consistency Alert: Entity Mismatch",
+                    variant="error",
+                    padding="6px 12px",
+                    margin="4px 0 8px 0",
+                )
             else:
-                render_callout(f"PAN 4th character '{pan_check.get('pan_entity_char')}' aligns with {pan_check.get('pan_entity_type')}.", title="Entity Verified", variant="success")
+                render_callout(
+                    f"PAN 4th character '{pan_check.get('pan_entity_char')}' aligns with {pan_check.get('pan_entity_type')}.",
+                    title="Entity Alignment Verified",
+                    variant="success",
+                    padding="6px 12px",
+                    margin="4px 0 8px 0",
+                )
 
             bcol1, bcol2 = st.columns(2)
+            has_cin = bool(cin_parsed_data and is_cin_valid)
             with bcol1:
-                render_kpi_card("Entity Status", "Active Corporate", subtext="MCA Status")
-                v_years = cin_parsed_data["business_vintage_years"] if (cin_parsed_data and "business_vintage_years" in cin_parsed_data) else 5
-                render_kpi_card("Operating Vintage", f"{v_years} Years", subtext="Incorporation")
+                ent_status = "Valid Format" if has_cin else ("Awaiting Input" if (not cin_val or cin_val == "UNREGISTERED_MSME") else "Invalid Format")
+                render_kpi_card("Entity Status", ent_status, subtext="MCA-21 Architecture")
+                v_disp = f"{cin_parsed_data['business_vintage_years']} Years" if has_cin else "Awaiting Input"
+                render_kpi_card("Operating Vintage", v_disp, subtext="Incorporation")
             with bcol2:
-                raw_sec = cin_parsed_data["macro_sector"] if (cin_parsed_data and "macro_sector" in cin_parsed_data) else "General Corporate"
+                raw_sec = cin_parsed_data["macro_sector"] if has_cin else "Awaiting Input"
                 sec_short = raw_sec[:22] + "..." if len(raw_sec) > 22 else raw_sec
                 render_kpi_card("Industry Sector", sec_short, subtext="NIC Taxonomy")
-                s_name = cin_parsed_data["state_name"] if (cin_parsed_data and "state_name" in cin_parsed_data) else "Pan-India"
+                s_name = cin_parsed_data["state_name"] if has_cin else "Pan-India (Pending)"
                 render_kpi_card("Jurisdiction State", s_name, subtext="RoC Jurisdiction")
 
     else:
@@ -276,6 +406,9 @@ with col_borrower:
                 st.session_state.lock_cleared_message = "Lock cleared because entity type changed."
                 st.rerun()
 
+            st.text_input("Corporate ID Number (CIN)", value="Not Applicable — Unincorporated MSME", disabled=True, key="case_cin_disabled_display")
+            render_callout("MCA-21 Corporate Registry vetting bypassed. Entity operates as Unincorporated / Sole Proprietorship.", title="Statutory Registration: Bypassed", variant="neutral", padding="6px 12px", margin="4px 0 8px 0")
+
             pan_val = st.text_input("Proprietor / Entity PAN", value=ctx["pan_input"], key="case_pan_input")
             if pan_val.strip().upper() != ctx["pan_input"].strip().upper():
                 st.session_state.active_pan_input = pan_val.strip().upper()
@@ -297,7 +430,7 @@ with col_borrower:
                 st.session_state.lock_cleared_message = "Lock cleared because PAN changed."
                 st.rerun()
 
-            render_callout("Corporate registry vetting (MCA-21) is turned OFF. Entity verification and RoC corporate docket checks are on hold.", title="Corporate Vetting On Hold", variant="neutral")
+            render_callout(f"PAN 4th character '{pan_val[3] if len(pan_val) >= 4 else 'P'}' denotes Proprietorship / Individual tax identity.", title="Primary Tax Identity: Active", variant="info", padding="6px 12px", margin="4px 0 8px 0")
 
             # Muted Blank / On Hold KPI cards using native component
             bcol1, bcol2 = st.columns(2)
@@ -311,71 +444,51 @@ with col_borrower:
 # RIGHT COLUMN: FACILITY TERMS & CAPITAL VISUALIZATION
 with col_facility:
     with st.container(border=True):
-        st.markdown("#### :material/account_balance: Facility Term Sheet & Risk-Based Pricing")
-        st.caption("Autonomous risk-based loan facility configuration with RBI repo benchmark spread alignment.")
+        st.markdown(
+            "#### :material/account_balance: Facility Term Sheet & Risk-Based Pricing\n"
+            "<div style='font-size: 13px; color: #64748B; margin-top: -2px; margin-bottom: 8px;'>"
+            "Risk-based loan facility configuration with illustrative base rate spread alignment.</div>",
+            unsafe_allow_html=True,
+        )
 
-        # 1. Bank Policy Pricing Context (Unbiased Real-Time Dynamic Engine)
+        # 1. Bank Policy Pricing Context (Real-Time Dynamic Engine)
         score_res = st.session_state.get("score_result")
         curr_rate = float(st.session_state.facility_interest_rate)
-        is_large_ticket = float(st.session_state.facility_loan_amount) > 10000000.0
+        base_rate = 6.50  # illustrative base rate
 
         if score_res is None or score_res.final_verdict == Verdict.INSUFFICIENT_DATA:
-            # Phase 1: Pre-Appraisal Intake Benchmark (Objective Standard Policy)
-            benchmark_rate = 11.50
-            delta_rate = curr_rate - benchmark_rate
-            if abs(delta_rate) < 0.01:
-                concession_chip = status_pill("Base Standard", variant="approve")
-            elif delta_rate < 0:
-                concession_chip = status_pill(f"Concession: {delta_rate:.2f}%", variant="info")
-            else:
-                concession_chip = status_pill(f"Margin: +{delta_rate:.2f}%", variant="neutral")
-
-            pricing_badge = f"""<div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid #0F766E; border-radius: 6px; padding: 10px 14px; margin: 6px 0 12px 0; font-size: 12px; color: #1E293B; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-                <div>
-                    <strong>Indicative Base Benchmark:</strong> RBI Repo (6.50%) + Base MSME Spread (5.00%) = <strong>11.50% p.a.</strong>
-                    <div style="font-size: 10px; color: #64748B; margin-top: 2px;">
-                        Pre-Appraisal Intake: Risk-adjusted spread will be derived dynamically upon completing Stage 3 (Five-Cs Scoring).
-                    </div>
-                </div>
-                <div>{concession_chip}</div>
-            </div>"""
+            risk_spread = 5.00
+            policy_rate = base_rate + risk_spread  # 11.50%
         else:
-            # Phase 2: Post-Appraisal Real-Time Risk-Derived Pricing
             comp_score = float(score_res.composite_score)
-            dscr_val = float(score_res.dscr)
-            bounces = (st.session_state.locked_case.bank_data.bounce_count or 0) if (st.session_state.locked_case and st.session_state.locked_case.bank_data) else 0
-
             if comp_score >= 75.0:
                 derived_spread = 3.75
-                risk_tier_name = "Prime Tier-1 (Score ≥ 75)"
             elif comp_score >= 60.0:
                 derived_spread = 5.00
-                risk_tier_name = "Moderate Tier-2 (Score 60-74)"
             else:
                 derived_spread = 7.25
-                risk_tier_name = "Stressed Tier-3 (Score < 60)"
 
+            bounces = (st.session_state.locked_case.bank_data.bounce_count or 0) if (st.session_state.locked_case and st.session_state.locked_case.bank_data) else 0
+            is_large_ticket = float(st.session_state.facility_loan_amount) > 10000000.0
             conduct_premium = 0.50 if bounces > 2 else 0.0
             ticket_premium = 0.50 if is_large_ticket else 0.0
-            benchmark_rate = 6.50 + derived_spread + conduct_premium + ticket_premium
-            delta_rate = curr_rate - benchmark_rate
+            risk_spread = derived_spread + conduct_premium + ticket_premium
+            policy_rate = base_rate + risk_spread
 
-            if abs(delta_rate) < 0.01:
-                concession_chip = status_pill("Risk Aligned", variant="approve")
-            elif delta_rate < 0:
-                concession_chip = status_pill(f"Concession: {delta_rate:.2f}%", variant="info")
-            else:
-                concession_chip = status_pill(f"Risk Premium: +{delta_rate:.2f}%", variant="conditional")
+        delta_rate = curr_rate - policy_rate
+        if abs(delta_rate) < 0.01:
+            diff_chip = status_pill("At Policy Rate", variant="approve")
+        elif delta_rate < 0:
+            diff_chip = status_pill(f"Concession: {delta_rate:.2f}%", variant="info")
+        else:
+            diff_chip = status_pill(f"Spread: +{delta_rate:.2f}%", variant="conditional")
 
-            pricing_badge = f"""<div style="background: #F0FDF4; border: 1px solid #BBF7D0; border-left: 3px solid #16A34A; border-radius: 6px; padding: 10px 14px; margin: 6px 0 12px 0; font-size: 12px; color: #14532D; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-                <div>
-                    <strong>Live Risk-Derived Rate:</strong> Repo (6.50%) + {derived_spread:.2f}% ({risk_tier_name}) = <strong>{benchmark_rate:.2f}% p.a.</strong>
-                    <div style="font-size: 10px; color: #166534; margin-top: 2px;">
-                        Objectively derived from Five-Cs Composite Score ({comp_score:.1f}/100) in Stage 3.
-                    </div>
-                </div>
-                <div>{concession_chip}</div>
-            </div>"""
+        pricing_badge = f"""<div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid #0F766E; border-radius: 6px; padding: 9px 12px; margin: 0 0 10px 0; font-size: 12px; color: #1E293B; display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+            <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                <strong>Benchmark: RBI Repo ({base_rate:.2f}%) + Risk Spread ({risk_spread:.2f}%) = {policy_rate:.2f}%</strong>
+            </div>
+            <div>{diff_chip}</div>
+        </div>"""
         _render_html(pricing_badge)
 
         # 2. Live Amortization & Debt Service Outflow Calculation
@@ -416,7 +529,7 @@ with col_facility:
             render_kpi_card(
                 "Total Interest Outflow",
                 format_inr(total_interest_cost),
-                subtext=f"{pct_i:.1f}% Cost of Capital",
+                subtext=f"{pct_i:.1f}% Total interest as % of total repayment",
                 tooltip=f"Cumulative interest cost over {n_int} months",
             )
 
@@ -428,7 +541,7 @@ with col_facility:
         cov_color = "#15803D" if cov_pct >= 100.0 else ("#B45309" if cov_pct >= 50.0 else "#94A3B8")
         cov_pill = status_pill(f"{cov_pct:.1f}% Covered", variant=cov_variant)
 
-        cov_meter_html = f"""<div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px 12px; margin: 4px 0 8px 0;">
+        cov_meter_html = f"""<div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 9px 12px; margin: 6px 0 9px 0;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
                 <span style="font-size: 11px; font-weight: 600; color: #1E293B;">Collateral Coverage Ratio:</span>
                 <div>{cov_pill} &nbsp; <span style="font-size: 11px; color: #64748B;">({format_inr(pled_c)} / {format_inr(req_l)})</span></div>
@@ -469,117 +582,127 @@ with col_facility:
                 st.session_state.loan_amount = 10000000.0
                 st.rerun()
 
-        r_col1, r_col2 = st.columns([1.2, 1])
-        with r_col1:
-            if st.button(f":material/bolt: Auto-Align to Policy ({benchmark_rate:.2f}%)", key="btn_auto_rate", width="stretch", help=f"Auto-sets interest rate to {benchmark_rate:.2f}% p.a. matching bank policy"):
-                st.session_state.facility_interest_rate = benchmark_rate
-                st.session_state.interest_rate = benchmark_rate
+        # 6. Primary Action Controls (Balanced 50/50 Grid)
+        colA, colB = st.columns(2)
+        with colA:
+            if st.button(f":material/bolt: Auto-Align ({policy_rate:.2f}%)", key="btn_auto_rate", width="stretch", help=f"Auto-sets interest rate to {policy_rate:.2f}% p.a. matching bank policy"):
+                st.session_state.facility_interest_rate = policy_rate
+                st.session_state.interest_rate = policy_rate
                 st.rerun()
-        with r_col2:
-            if st.button(":material/percent: -0.50% Concession", key="btn_concession_quick", width="stretch", help="Apply 50 bps discretionary credit committee concession"):
-                new_c_rate = max(7.5, float(st.session_state.facility_interest_rate) - 0.50)
-                st.session_state.facility_interest_rate = new_c_rate
-                st.session_state.interest_rate = new_c_rate
+        with colB:
+            if st.button(":material/restart_alt: Reset to Policy Standard", key="btn_reset_policy_terms", width="stretch", help="Reset facility terms to standard policy benchmark"):
+                reset_facility_to_defaults()
                 st.rerun()
 
-        # 7. Complete Formal Specification Form (preserves test indices & allows fine-tuning)
-        with st.expander("⚙️ Calibrate Facility Parameters & Discretionary Pricing (Credit Committee)", expanded=False):
-            with st.form(key="case_facility_form"):
-                form_loan = st.number_input(
+        # 7. Credit Committee Calibration Modal Trigger
+        @st.dialog("Credit Committee Facility Calibration & Discretionary Pricing", width="large")
+        def show_facility_calibration_dialog(p_rate: float):
+            st.markdown(
+                "<div style='font-size: 13px; color: #64748B; margin-top: -6px; margin-bottom: 12px;'>"
+                "Calibrate requested debt facility amount, repayment horizon, interest spread concessions, "
+                "and statutory collateral covenants. Changes immediately update debt service (DSCR) calculations.</div>",
+                unsafe_allow_html=True,
+            )
+
+            d_col1, d_col2 = st.columns(2)
+            with d_col1:
+                dlg_loan = st.number_input(
                     "Requested Facility (₹)",
                     min_value=100000.0,
                     value=float(st.session_state.facility_loan_amount),
                     step=500000.0,
                     format="%.2f",
                     key="form_loan_amount",
+                    help="Principal amount requested for debt facility.",
                 )
-                form_tenure = st.slider(
-                    "Tenure (Months)",
+                dlg_tenure = st.slider(
+                    "Amortization Tenure (Months)",
                     min_value=12,
                     max_value=84,
                     value=int(st.session_state.facility_tenure_months),
                     step=6,
                     key="form_tenure_months",
-                    help="Applicant requested repayment amortization horizon. Milestones: 12M (1 Yr), 36M (3 Yrs), 60M (5 Yrs), 84M (7 Yrs)."
+                    help="Applicant requested repayment amortization horizon. Milestones: 12M (1 Yr), 36M (3 Yrs), 60M (5 Yrs), 84M (7 Yrs).",
                 )
-                form_rate = st.slider(
+                dlg_cgtmse = st.checkbox(
+                    "CGTMSE Guarantee Covered",
+                    value=bool(st.session_state.facility_cgtmse_covered),
+                    key="form_cgtmse_covered",
+                    help="Credit Guarantee Fund Trust for Micro and Small Enterprises coverage active.",
+                )
+
+            with d_col2:
+                dlg_rate = st.slider(
                     "Policy Lending Rate (%)",
-                    min_value=7.5,
-                    max_value=24.0,
+                    min_value=7.50,
+                    max_value=24.00,
                     value=float(st.session_state.facility_interest_rate),
                     step=0.25,
                     key="form_interest_rate",
-                    help="Derived autonomously from Bank Risk Policy matrix. Adjust if discretionary credit committee concession is sanctioned."
+                    help=f"Derived from Bank Risk Policy matrix ({p_rate:.2f}% benchmark). Adjust if discretionary credit committee concession is sanctioned.",
                 )
-                form_collat = st.number_input(
-                    "Pledged Collateral (₹)",
+                dlg_collat = st.number_input(
+                    "Pledged Tangible Collateral (₹)",
                     min_value=0.0,
                     value=float(st.session_state.facility_collateral_val),
                     step=100000.0,
                     format="%.2f",
-                    help="Immovable property, fixed assets, or liquid collateral pledged.",
                     key="form_collateral_val",
+                    help="Immovable property, fixed assets, or liquid collateral pledged.",
                 )
-                form_cgtmse = st.checkbox(
-                    "CGTMSE Guarantee Covered",
-                    value=bool(st.session_state.facility_cgtmse_covered),
-                    help="Credit Guarantee Fund Trust for Micro and Small Enterprises coverage active.",
-                    key="form_cgtmse_covered",
-                )
-                submitted = st.form_submit_button(":material/save: Apply Facility Terms", type="primary", width="stretch")
-                if submitted:
-                    st.session_state.facility_loan_amount = float(form_loan)
-                    st.session_state.facility_tenure_months = int(form_tenure)
-                    st.session_state.facility_interest_rate = float(form_rate)
-                    st.session_state.facility_collateral_val = float(form_collat)
-                    st.session_state.facility_cgtmse_covered = bool(form_cgtmse)
-                    st.session_state.loan_amount = float(form_loan)
-                    st.session_state.tenure_months = int(form_tenure)
-                    st.session_state.interest_rate = float(form_rate)
-                    st.session_state.collateral_value = float(form_collat)
-                    st.session_state.cgtmse_covered = bool(form_cgtmse)
+                if dlg_cgtmse:
+                    st.caption(":material/verified_user: CGTMSE Trust Cover Active: Credit guarantee covers eligible debt.")
+
+            st.markdown("<hr style='margin: 12px 0 16px 0; border: none; border-top: 1px solid #E2E8F0;' />", unsafe_allow_html=True)
+
+            b1, b2, b3 = st.columns([1.1, 1.1, 1.3])
+            with b1:
+                if st.button(":material/percent: Apply Discretionary Concession (-0.50%)", key="btn_concession_quick", width="stretch", help="Apply 50 bps discretionary credit committee concession"):
+                    new_c_rate = max(7.5, float(st.session_state.facility_interest_rate) - 0.50)
+                    st.session_state.facility_interest_rate = new_c_rate
+                    st.session_state.interest_rate = new_c_rate
                     st.rerun()
 
+            with b2:
+                if st.button(":material/restart_alt: Reset to Policy Standard", key="btn_reset_policy_terms_dlg", width="stretch", help="Reset facility terms to standard policy benchmark"):
+                    reset_facility_to_defaults()
+                    st.rerun()
+
+            with b3:
+                if st.button(":material/save: Apply & Recalculate Terms", key="btn_apply_facility_terms", type="primary", width="stretch", help="Commit updated facility terms and recalculate underwriting metrics"):
+                    st.session_state.facility_loan_amount = float(dlg_loan)
+                    st.session_state.facility_tenure_months = int(dlg_tenure)
+                    st.session_state.facility_interest_rate = float(dlg_rate)
+                    st.session_state.facility_collateral_val = float(dlg_collat)
+                    st.session_state.facility_cgtmse_covered = bool(dlg_cgtmse)
+                    st.session_state.loan_amount = float(dlg_loan)
+                    st.session_state.tenure_months = int(dlg_tenure)
+                    st.session_state.interest_rate = float(dlg_rate)
+                    st.session_state.collateral_value = float(dlg_collat)
+                    st.session_state.cgtmse_covered = bool(dlg_cgtmse)
+                    st.rerun()
+
+        if st.button("⚙️ Calibrate Facility Covenants & Pricing", key="btn_open_calibration_dialog", width="stretch", help="Open Credit Committee facility terms & discretionary pricing calibration drawer"):
+            show_facility_calibration_dialog(policy_rate)
+
         if st.session_state.facility_cgtmse_covered:
-            st.caption(":material/verified_user: CGTMSE Trust Cover Active: Credit guarantee covers eligible debt. Annual fee approx 0.75%–1.00% p.a.")
-
-        if st.button(":material/restart_alt: Reset to Policy Standard", key="btn_reset_policy_terms", width="stretch"):
-            st.session_state.facility_loan_amount = 5000000.0
-            st.session_state.facility_tenure_months = 36
-            st.session_state.facility_interest_rate = 11.5
-            st.session_state.facility_collateral_val = 2500000.0
-            st.session_state.facility_cgtmse_covered = False
-            st.session_state.loan_amount = 5000000.0
-            st.session_state.tenure_months = 36
-            st.session_state.interest_rate = 11.5
-            st.session_state.collateral_value = 2500000.0
-            st.session_state.cgtmse_covered = False
-            st.rerun()
-
-        st.caption(":material/info: Click **Apply Facility Terms** to persist parameter changes and recalculate EMI.")
+            st.caption(":material/verified_user: CGTMSE Trust Cover Active: Credit guarantee covers eligible debt.")
 
 # ----------------------------------------------------------------------------
 # 3. ONBOARDING AUDIT & NAVIGATION
 # ----------------------------------------------------------------------------
-st.markdown("---")
-ocol1, ocol2 = st.columns([1, 1])
-
-with ocol1:
-    if st.button("Log Onboarding Verification Event", key="btn_log_onboarding"):
-        record_event(
-            event_type="ONBOARDING_VERIFIED",
-            actor="OFFICER",
-            details={
-                "cin": cin_parsed_data["cin"] if (cin_parsed_data and "cin" in cin_parsed_data) else (ctx.get("cin_input") or "UNKNOWN"),
-                "pan": pan_input,
-                "sector": cin_parsed_data["macro_sector"] if (cin_parsed_data and "macro_sector" in cin_parsed_data) else "Unknown",
-                "vintage_years": cin_parsed_data["business_vintage_years"] if (cin_parsed_data and "business_vintage_years" in cin_parsed_data) else 0,
-                "loan_amount": str(loan_amount),
-            }
-        )
-        st.toast("Onboarding verified and stamped in Audit Trail.")
-
-with ocol2:
-    if st.button("Proceed to Evidence Ingestion →", type="primary", key="btn_next_evidence", width="stretch"):
-        st.session_state.current_page = "Evidence"
-        st.switch_page("app_pages/evidence.py")
+st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+if st.button("Proceed to Evidence Ingestion →", type="primary", key="btn_next_evidence", width="stretch"):
+    record_event(
+        event_type="ONBOARDING_VERIFIED",
+        actor="OFFICER",
+        details={
+            "cin": cin_parsed_data["cin"] if (cin_parsed_data and "cin" in cin_parsed_data) else (ctx.get("cin_input") or "UNKNOWN"),
+            "pan": pan_input,
+            "sector": cin_parsed_data["macro_sector"] if (cin_parsed_data and "macro_sector" in cin_parsed_data) else "Unknown",
+            "vintage_years": cin_parsed_data["business_vintage_years"] if (cin_parsed_data and "business_vintage_years" in cin_parsed_data) else 0,
+            "loan_amount": str(loan_amount),
+        }
+    )
+    st.session_state.current_page = "Evidence"
+    st.switch_page("app_pages/evidence.py")
