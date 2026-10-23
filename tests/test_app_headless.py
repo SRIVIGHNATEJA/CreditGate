@@ -47,7 +47,7 @@ def test_app_cohort1_end_to_end_flow():
     at.run(timeout=30)
 
     # Select Cohort 1
-    at.selectbox[0].select_index(1).run(timeout=30)
+    next(b for b in at.button if b.key == "btn_open_prime").click().run(timeout=30)
     assert len(at.exception) == 0
 
     # Switch to Evidence page and run extraction

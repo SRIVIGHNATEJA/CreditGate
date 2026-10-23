@@ -213,7 +213,7 @@ def test_stage4_cohort_switch_leaves_no_stale_state():
     at.run(timeout=30)
 
     # Mount Cohort 1
-    at.selectbox[0].select_index(1).run(timeout=30)
+    next(b for b in at.button if b.key == "btn_open_prime").click().run(timeout=30)
     at.switch_page("app_pages/evidence.py").run(timeout=30)
     for btn in at.button:
         if "Extract" in btn.label:
@@ -232,7 +232,7 @@ def test_stage4_cohort_switch_leaves_no_stale_state():
 
     # Switch to Cohort 2 on Case page
     at.switch_page("app_pages/case.py").run(timeout=30)
-    at.selectbox[0].select_index(2).run(timeout=30)
+    next(b for b in at.button if b.key == "btn_open_distressed").click().run(timeout=30)
 
     # Downstream extraction, hitl, locked_case, and score_result must be wiped cleanly
     assert at.session_state.score_result is None

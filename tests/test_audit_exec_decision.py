@@ -226,7 +226,7 @@ def test_apptest_decision_adverse_media_rescores_in_place():
     at = AppTest.from_file(APP_PATH, default_timeout=30)
     at.run(timeout=30)
     # Select Cohort 2
-    at.selectbox[0].select_index(2).run(timeout=30)
+    next(b for b in at.button if b.key == "btn_open_distressed").click().run(timeout=30)
     at.switch_page("app_pages/evidence.py").run(timeout=30)
     next((b for b in at.button if "Extract" in b.label)).click().run(timeout=30)
     next((b for b in at.button if "Confirm & Lock" in b.label)).click().run(timeout=30)
@@ -259,4 +259,50 @@ def test_apptest_decision_adverse_media_rescores_in_place():
     assert at.session_state.score_result is not None
     assert at.session_state.score_result.final_verdict == Verdict.REJECT
     assert at.session_state.score_result.knockout_applied is not None
+
+
+def test_decision_programmatic_tab_navigation():
+    """
+    Test 6: Verify bidirectional programmatic tab navigation buttons across all 3 decision tabs:
+    - Tab 1 -> btn_adv_tab1 advances to Tab 2
+    - Tab 2 -> btn_adv_tab2 advances to Tab 3
+    - Tab 3 -> btn_back_tab3 reviews Tab 2
+    - Tab 2 -> btn_back_tab2 reviews Tab 1
+    """
+    at = AppTest.from_file(APP_PATH, default_timeout=30)
+    at.run(timeout=30)
+    next(b for b in at.button if b.key == "btn_open_prime").click().run(timeout=30)
+    at.switch_page("app_pages/evidence.py").run(timeout=30)
+    next((b for b in at.button if "Extract" in b.label)).click().run(timeout=30)
+    next((b for b in at.button if "Confirm & Lock" in b.label)).click().run(timeout=30)
+    at.switch_page("app_pages/decision.py").run(timeout=30)
+    next((b for b in at.button if "Run Deterministic" in b.label)).click().run(timeout=30)
+
+    assert at.session_state.score_result is not None
+    assert at.session_state.decision_active_tab == "1. Quantitative Scorecard"
+
+    # Tab 1 -> Advance to Tab 2
+    adv_tab1 = next((b for b in at.button if b.key == "btn_adv_tab1"), None)
+    assert adv_tab1 is not None
+    adv_tab1.click().run(timeout=30)
+    assert at.session_state.decision_active_tab == "2. Forensic Legal Radar"
+
+    # Tab 2 -> Advance to Tab 3
+    adv_tab2 = next((b for b in at.button if b.key == "btn_adv_tab2"), None)
+    assert adv_tab2 is not None
+    adv_tab2.click().run(timeout=30)
+    assert at.session_state.decision_active_tab == "3. Committee Quorum & Sanction"
+
+    # Tab 3 -> Back to Tab 2
+    back_tab3 = next((b for b in at.button if b.key == "btn_back_tab3"), None)
+    assert back_tab3 is not None
+    back_tab3.click().run(timeout=30)
+    assert at.session_state.decision_active_tab == "2. Forensic Legal Radar"
+
+    # Tab 2 -> Back to Tab 1
+    back_tab2 = next((b for b in at.button if b.key == "btn_back_tab2"), None)
+    assert back_tab2 is not None
+    back_tab2.click().run(timeout=30)
+    assert at.session_state.decision_active_tab == "1. Quantitative Scorecard"
+
 

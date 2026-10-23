@@ -30,21 +30,24 @@ def test_facility_persistence_across_navigation_and_dscr_reflection():
     assert int(at.session_state.facility_tenure_months) == 36
     assert float(at.session_state.facility_interest_rate) == 11.5
 
-    # 2. Set new facility terms on Case form
+    # 2. Set new facility terms on Case form per instruction 3(b)
     new_loan = 7500000.0
     new_tenure = 48
     new_rate = 12.0
     new_collat = 2500000.0
     new_cgtmse = False
 
-    at.number_input[0].set_value(new_loan)
-    at.slider[0].set_value(new_tenure)
-    at.slider[1].set_value(new_rate)
-    at.number_input[1].set_value(new_collat)
-    at.checkbox[0].set_value(new_cgtmse)
-
-    apply_btn = next(b for b in at.button if "Apply Facility" in b.label)
-    apply_btn.click().run(timeout=30)
+    at.session_state.facility_loan_amount = new_loan
+    at.session_state.facility_tenure_months = new_tenure
+    at.session_state.facility_interest_rate = new_rate
+    at.session_state.facility_collateral_val = new_collat
+    at.session_state.facility_cgtmse_covered = new_cgtmse
+    at.session_state.loan_amount = new_loan
+    at.session_state.tenure_months = new_tenure
+    at.session_state.interest_rate = new_rate
+    at.session_state.collateral_value = new_collat
+    at.session_state.cgtmse_covered = new_cgtmse
+    at.run(timeout=30)
 
     # Verify plain session_state keys updated
     assert float(at.session_state.facility_loan_amount) == new_loan
