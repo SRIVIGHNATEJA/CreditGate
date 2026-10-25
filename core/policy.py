@@ -1,6 +1,6 @@
 from enum import IntEnum
 from decimal import Decimal
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Optional
 
 
 class Verdict(IntEnum):
@@ -155,4 +155,132 @@ def derive_facility_pricing(
         "monthly_emi": monthly_emi,
         "sanctionable": verdict != Verdict.REJECT
     }
+
+
+def derive_stipulated_covenants(
+    case: Any,
+    score_result: Optional[Any] = None,
+    custom_covenants: Optional[List[str]] = None,
+    collateral_value: Optional[Decimal] = None,
+    cgtmse_covered: Optional[bool] = None,
+) -> Dict[str, Any]:
+    """
+    Deterministic Credit Covenants Resolver.
+    Categorizes stipulations into:
+    1. Statutory Mandates (Legally required under Companies Act 2013 / Banking Law / CGTMSE).
+    2. Risk-Triggered Mitigants (Dynamically derived from DSCR, turnover gap, facility exposure, score).
+    3. Custom Officer Stipulations.
+
+    Returns a structured payload with items, badges, and plain-text list for CAM export.
+    """
+    if collateral_value is None and case is not None:
+        collateral_value = getattr(case, "collateral_value", Decimal("0.00")) or Decimal("0.00")
+    if collateral_value is None:
+        collateral_value = Decimal("0.00")
+
+    if cgtmse_covered is None and case is not None:
+        cgtmse_covered = getattr(case, "cgtmse_covered", False) or False
+    if cgtmse_covered is None:
+        cgtmse_covered = False
+
+    statutory_covenants: List[Dict[str, Any]] = [
+        {
+            "title": "RoC Form CHG-1 & CERSAI Security Interest Registration within 30 Days (Sec 77 Companies Act, 2013)",
+            "category": "STATUTORY",
+            "badge": "STATUTORY",
+            "trigger": "Statutory Mandate (Companies Act 2013 & SARFAESI Act)",
+        },
+        {
+            "title": "Clear Title Search Report (TSR) & Non-Encumbrance Certificate by Empanelled Legal Counsel",
+            "category": "STATUTORY",
+            "badge": "STATUTORY",
+            "trigger": "Statutory Mandate (Credit Policy §3.1)",
+        },
+    ]
+
+    if cgtmse_covered:
+        statutory_covenants.append({
+            "title": "CGTMSE Sovereign Guarantee Enrolment & Annual Guarantee Fee (AGF) Remittance",
+            "category": "STATUTORY",
+            "badge": "STATUTORY",
+            "trigger": "CGTMSE Scheme Mandate (§4.1 Scheme Operating Guidelines)",
+        })
+
+    risk_covenants: List[Dict[str, Any]] = []
+
+    # 1. DSCR Trigger (< 1.30x)
+    if score_result is not None:
+        dscr_val = getattr(score_result, "dscr", None)
+        if dscr_val is not None and dscr_val != Decimal("Infinity") and dscr_val < Decimal("1.30"):
+            risk_covenants.append({
+                "title": "3-Month Debt Service Reserve Account (DSRA) Cash Deposit",
+                "category": "RISK_TRIGGERED",
+                "badge": "RISK-TRIGGERED",
+                "trigger": f"Trigger: DSCR ({float(dscr_val):.2f}x) < 1.30x",
+            })
+
+    # 2. Turnover Gap Trigger (> 15%)
+    turnover_gap = Decimal("0.0")
+    if case is not None and getattr(case, "gst_data", None) and getattr(case, "bank_data", None):
+        gst_val = getattr(case.gst_data, "taxable_value", None) or Decimal("0")
+        bank_val = getattr(case.bank_data, "total_credits", None) or Decimal("0")
+        max_val = max(gst_val, bank_val)
+        if max_val > Decimal("0"):
+            turnover_gap = abs(gst_val - bank_val) / max_val
+            if turnover_gap > Decimal("0.15"):
+                risk_covenants.append({
+                    "title": "Cashflow Escrow Mechanism via Designated Account",
+                    "category": "RISK_TRIGGERED",
+                    "badge": "RISK-TRIGGERED",
+                    "trigger": f"Trigger: Turnover Gap ({float(turnover_gap)*100:.1f}%) > 15%",
+                })
+
+    # 3. Facility Exposure Trigger (≥ ₹25 Lakhs)
+    req_amt = Decimal("0")
+    if case is not None:
+        req_amt = getattr(case, "requested_loan_amount", None) or getattr(case, "requested_amount", None) or Decimal("0")
+    if req_amt >= Decimal("2500000"):
+        amt_lakhs = float(req_amt) / 100000.0
+        risk_covenants.append({
+            "title": "Unconditional Personal Guarantee of All Promoters",
+            "category": "RISK_TRIGGERED",
+            "badge": "RISK-TRIGGERED",
+            "trigger": f"Trigger: Facility Exposure (₹{amt_lakhs:.2f}L) ≥ ₹25 Lakhs",
+        })
+
+    # 4. Composite Score Trigger (< 70)
+    if score_result is not None:
+        comp_score = getattr(score_result, "composite_score", None)
+        if comp_score is not None and comp_score < Decimal("70"):
+            risk_covenants.append({
+                "title": "Quarterly Physical Stock & Receivables Audit by Bank Auditor",
+                "category": "RISK_TRIGGERED",
+                "badge": "RISK-TRIGGERED",
+                "trigger": f"Trigger: Composite Score ({float(comp_score):.1f}) < 70",
+            })
+
+    # 5. Custom Officer Stipulations
+    officer_covenants: List[Dict[str, Any]] = []
+    if custom_covenants:
+        for c in custom_covenants:
+            c_clean = str(c).strip()
+            if c_clean:
+                officer_covenants.append({
+                    "title": c_clean,
+                    "category": "OFFICER_DISCRETION",
+                    "badge": "DISCRETIONARY",
+                    "trigger": "Desk Officer Stipulation",
+                })
+
+    all_items = statutory_covenants + risk_covenants + officer_covenants
+    plain_list = [c["title"] for c in all_items]
+
+    return {
+        "statutory": statutory_covenants,
+        "risk_triggered": risk_covenants,
+        "custom": officer_covenants,
+        "all_items": all_items,
+        "plain_list": plain_list,
+    }
+
 

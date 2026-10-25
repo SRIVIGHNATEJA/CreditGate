@@ -495,14 +495,21 @@ def score_credit_case(
     else:
         collateral_score = calculated_coverage_score
 
-    if not (cgtmse_covered and collateral_value == Decimal("0")) and collateral_score < Decimal("100.0"):
+    if collateral_score < Decimal("100.0"):
+        pts_ded = Decimal("100.0") - collateral_score
+        if cgtmse_covered:
+            obs = f"{coverage:.2f}x Coverage (CGTMSE Sovereign Floor Applied)"
+            expl = "Collateral coverage below 1.25x policy benchmark; CGTMSE sovereign credit guarantee floor applied at 75.0 points"
+        else:
+            obs = f"{coverage:.2f}x Coverage"
+            expl = "Pledged tangible security does not fully satisfy 1.25x collateral cover"
         deductions.append(ScoreDeduction(
             rule_id="RULE_COLLATERAL_COVERAGE",
             pillar="COLLATERAL",
-            points_deducted=Decimal("100.0") - collateral_score,
-            observed_value=f"{coverage:.2f}x Coverage",
+            points_deducted=pts_ded,
+            observed_value=obs,
             threshold=">= 1.25x",
-            explanation="Pledged tangible security does not fully satisfy 1.25x collateral cover"
+            explanation=expl
         ))
 
     # ------------------------------------------------------------------------
