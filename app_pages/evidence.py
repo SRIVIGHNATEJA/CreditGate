@@ -19,10 +19,12 @@ from core.data_models import (
     GSTExtraction,
     ITRExtraction,
 )
-from core.parser import extract_all_documents
+from core.parser import extract_all_documents, extract_entity_identifiers
+from core.onboarding import generate_application_id
 from core.formatting import format_inr
 from ui.state import get_app_context, record_event, COHORT_COMPANY_NAMES, select_and_reset_cohort
 from ui.components import render_kpi_card, render_callout, status_pill
+from ui.upload_modal import show_custom_upload_dialog, sync_extracted_identifiers_to_state
 
 st.session_state.current_page = "Evidence"
 ctx = get_app_context()
@@ -40,7 +42,7 @@ proposed_emi = ctx["proposed_emi"]
 has_all_docs = ctx["has_all_docs"]
 
 # ----------------------------------------------------------------------------
-# 1. INTAKE & ACTIVE EVIDENCE DOSSIER COCKPIT
+# 1. INTAKE & ACTIVE EVIDENCE INTAKE COCKPIT
 # ----------------------------------------------------------------------------
 @st.cache_data
 def create_sample_zip() -> bytes:
@@ -70,7 +72,11 @@ chip_ext = status_pill("Extracted", variant="approve" if is_extracted else "neut
 chip_lock = status_pill("Locked", variant="approve" if is_locked else "neutral")
 
 # A. Benchmark Scenario Selection Modal (@st.dialog)
-active_company_name = ctx["company_name"]
+active_company_name = (
+    st.session_state.get("custom_company_name")
+    if cohort_selection == "None (Manual Upload)" and st.session_state.get("custom_company_name")
+    else ctx["company_name"]
+)
 collateral_val = ctx.get("collateral_val", 0.0)
 loan_amt_float = float(loan_amount)
 emi_float = float(proposed_emi)
@@ -140,100 +146,44 @@ if is_extracted:
 
 @st.dialog("Select Underwriting Benchmark Scenario", width="large")
 def show_cohort_selector_dialog():
-    st.caption("Select a pre-configured synthetic commercial borrower to stage verified document streams:")
+    st.markdown(
+        "<div style='font-size: 11px; color: #475569; margin-top: -6px; margin-bottom: 10px;'>"
+        "<span style='font-weight: 700; color: #0F766E; background: #F0FDFA; border: 1px solid #99F6E4; padding: 1.5px 7px; border-radius: 4px; margin-right: 6px;'>SUPERVISED BENCHMARK SCENARIOS</span>"
+        "Select an institutional reference cohort to stage verified multi-file document streams for underwriting."
+        "</div>",
+        unsafe_allow_html=True,
+    )
     col_m1, col_m2, col_m3 = st.columns(3)
     with col_m1:
         st.markdown("#### Cohort 1: Prime MSME")
-        st.caption("**Apex Synthetic Holdings**\n0 mandate bounces, clean turnover, 1.82x DSCR.")
+        st.caption("**Apex Industrial Holdings**\n0 mandate bounces, clean turnover, 1.82x DSCR.")
         is_c1 = "Apex" in active_company_name or "Prime" in active_company_name
         if st.button("● Active Scenario" if is_c1 else "Load Prime MSME", key="btn_load_c1", width="stretch", type="primary" if is_c1 else "secondary"):
-            select_and_reset_cohort("Cohort 1: Prime MSME (Apex Synthetic Demo)")
+            select_and_reset_cohort("Cohort 1: Prime MSME (Apex Industrial Benchmark)")
             st.rerun()
     with col_m2:
         st.markdown("#### Cohort 2: Distressed")
-        st.caption("**Kaveri Fictitious Freight**\n5 mandate bounces, debt stress, thin liquidity.")
+        st.caption("**Kaveri Logistics & Freight**\n5 mandate bounces, debt stress, thin liquidity.")
         is_c2 = "Kaveri" in active_company_name or "Distressed" in active_company_name
         if st.button("● Active Scenario" if is_c2 else "Load Distressed", key="btn_load_c2", width="stretch", type="primary" if is_c2 else "secondary"):
-            select_and_reset_cohort("Cohort 2: Distressed (Kaveri Fictitious Demo)")
+            select_and_reset_cohort("Cohort 2: Distressed (Kaveri Logistics Benchmark)")
             st.rerun()
     with col_m3:
         st.markdown("#### Cohort 3: Mismatch Trap")
-        st.caption("**Bharat Mock Steels & Infra**\nGST vs Bank credit variance, circular trading flag.")
+        st.caption("**Bharat Structural Steels**\nGST vs Bank credit variance, circular trading flag.")
         is_c3 = "Bharat" in active_company_name or "Mismatch" in active_company_name
         if st.button("● Active Scenario" if is_c3 else "Load Mismatch Trap", key="btn_load_c3", width="stretch", type="primary" if is_c3 else "secondary"):
-            select_and_reset_cohort("Cohort 3: Mismatch Trap (Bharat Mock Demo)")
+            select_and_reset_cohort("Cohort 3: Mismatch Trap (Bharat Structural Benchmark)")
             st.rerun()
 
-@st.dialog("Commercial Document Ingestion Room", width="large")
-def show_custom_upload_dialog():
-    st.caption("Upload commercial borrower PDF documents (Bank Statement, GSTR-3B, and ITR-V / Financial Statements). Max 1MB per document (Digital Text PDFs).")
-
-    has_b = bool(st.session_state.get("uploaded_bank_bytes"))
-    has_g = bool(st.session_state.get("uploaded_gst_bytes"))
-    has_it = bool(st.session_state.get("uploaded_itr_bytes"))
-
-    col_u1, col_u2, col_u3 = st.columns(3)
-    with col_u1:
-        st.markdown("**1. Operative Bank Statement**")
-        status_b = "● Custom PDF Loaded" if has_b else "○ Using Benchmark Ground Truth"
-        color_b = "#047857" if has_b else "#64748B"
-        st.markdown(f"<span style='font-size: 11px; font-weight: 600; color: {color_b};'>{status_b}</span>", unsafe_allow_html=True)
-        up_b_dlg = st.file_uploader("Bank Statement (PDF)", type=["pdf"], key="ev_up_bank", label_visibility="collapsed", help="Operative CA/CC bank ledger in digital PDF format (max 1MB)")
-    with col_u2:
-        st.markdown("**2. Statutory GSTR-3B**")
-        status_g = "● Custom PDF Loaded" if has_g else "○ Using Benchmark Ground Truth"
-        color_g = "#047857" if has_g else "#64748B"
-        st.markdown(f"<span style='font-size: 11px; font-weight: 600; color: {color_g};'>{status_g}</span>", unsafe_allow_html=True)
-        up_g_dlg = st.file_uploader("GSTR-3B Summary (PDF)", type=["pdf"], key="ev_up_gst", label_visibility="collapsed", help="Monthly statutory GST return filing summary (max 1MB)")
-    with col_u3:
-        st.markdown("**3. Audited ITR / Financials**")
-        status_it = "● Custom PDF Loaded" if has_it else "○ Using Benchmark Ground Truth"
-        color_it = "#047857" if has_it else "#64748B"
-        st.markdown(f"<span style='font-size: 11px; font-weight: 600; color: {color_it};'>{status_it}</span>", unsafe_allow_html=True)
-        up_it_dlg = st.file_uploader("ITR / Financials (PDF)", type=["pdf"], key="ev_up_itr", label_visibility="collapsed", help="Income tax return acknowledgement / audited financials (max 1MB)")
-
-    # Immediate capture of newly uploaded files
-    files_changed = False
-    if up_b_dlg is not None:
-        b_val = up_b_dlg.getvalue()
-        if st.session_state.get("uploaded_bank_bytes") != b_val:
-            st.session_state.uploaded_bank_bytes = b_val
-            files_changed = True
-    if up_g_dlg is not None:
-        g_val = up_g_dlg.getvalue()
-        if st.session_state.get("uploaded_gst_bytes") != g_val:
-            st.session_state.uploaded_gst_bytes = g_val
-            files_changed = True
-    if up_it_dlg is not None:
-        it_val = up_it_dlg.getvalue()
-        if st.session_state.get("uploaded_itr_bytes") != it_val:
-            st.session_state.uploaded_itr_bytes = it_val
-            files_changed = True
-
-    if files_changed:
-        st.session_state.show_custom_upload_slots = True
-        select_and_reset_cohort("None (Manual Upload)")
-
-    st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
-    c_act1, c_act2 = st.columns([1.5, 1.2])
-    with c_act1:
-        if st.button("✓ Apply & Return to Dossier", key="btn_apply_custom_upload", type="primary", use_container_width=True):
-            st.rerun()
-    with c_act2:
-        if st.button("↺ Restore Benchmark Defaults", key="btn_restore_benchmark_upload", type="secondary", use_container_width=True):
-            st.session_state.uploaded_bank_bytes = None
-            st.session_state.uploaded_gst_bytes = None
-            st.session_state.uploaded_itr_bytes = None
-            st.session_state.show_custom_upload_slots = False
-            select_and_reset_cohort("Cohort 1: Prime MSME (Apex Synthetic Demo)")
-            st.rerun()
+# Custom Document Ingestion Dialog is imported from ui.upload_modal
 
 # B. Consolidated 2-Column Header & Sanction Baseline
 col_h_left, col_h_right = st.columns([11, 9], vertical_alignment="center")
 with col_h_left:
     st.markdown(
         f"<div style='font-size: 1.32rem; font-weight: 800; color: #0B1F3A; letter-spacing: -0.015em; margin-bottom: 2px;'>"
-        f"📁 Evidence Dossier: <span style='white-space: nowrap;'>{active_company_name}</span>"
+        f"Evidence File: <span style='white-space: nowrap;'>{active_company_name}</span>"
         f"</div>",
         unsafe_allow_html=True,
     )
@@ -245,7 +195,7 @@ with col_h_right:
             or st.session_state.get("uploaded_gst_bytes")
             or st.session_state.get("uploaded_itr_bytes")
         )
-        btn_upload_label = "✓ Custom Active" if is_custom_active else "📁 Custom Upload"
+        btn_upload_label = "✓ Custom Active" if is_custom_active else "Custom Upload"
         if st.button(btn_upload_label, key="btn_toggle_custom_mode", width="stretch", help="Open Commercial Document Ingestion Room to upload custom PDF streams"):
             show_custom_upload_dialog()
     with c_btn2:
@@ -253,16 +203,16 @@ with col_h_right:
             show_cohort_selector_dialog()
     with c_btn3:
         st.download_button(
-            label="⬇ Sample Pack (.zip)",
+            label="⬇ Benchmark Pack (.zip)",
             data=create_sample_zip(),
-            file_name="CreditGate_Synthetic_Sample_PDFs.zip",
+            file_name="CreditGate_Benchmark_Files.zip",
             mime="application/zip",
             key="btn_download_sample_pdfs",
             width="stretch",
-            help="Download verified synthetic benchmark PDFs package for local testing",
+            help="Download verified benchmark underwriting file package (PDF package) for local validation",
         )
 
-# C. Active Evidence Dossier Strip (Tier 1 Cards)
+# C. Active Evidence Summary Strip (Tier 1 Cards)
 if is_sample_active or bank_bytes or gst_bytes or itr_bytes:
     pill_b = "● Ground Truth Asset" if is_sample_active else ("● Custom Upload" if bank_bytes else "● Pending Upload")
     pill_g = "● Ground Truth Asset" if is_sample_active else ("● Custom Upload" if gst_bytes else "● Pending Upload")
@@ -273,17 +223,17 @@ if is_sample_active or bank_bytes or gst_bytes or itr_bytes:
         with col_d1:
             st.markdown(
                 f"""
-                <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 3.5px solid #0284C7; border-radius: 10px; padding: 20px 22px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04); min-height: 184px; display: flex; flex-direction: column; justify-content: space-between;">
+                <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 3px solid #0284C7; border-radius: 8px; padding: 12px 14px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04); min-height: 128px; display: flex; flex-direction: column; justify-content: space-between;">
                     <div>
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                            <strong style="font-size: 14px; color: #0B1F3A; letter-spacing: 0.02em;">📄 BANK STATEMENT</strong>
-                            <span style="font-size: 11px; font-weight: 700; color: #0369A1; background: #E0F2FE; padding: 3px 9px; border-radius: 5px;">{pill_b}</span>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <strong style="font-size: 12.5px; color: #0B1F3A; letter-spacing: 0.01em;">BANK STATEMENT</strong>
+                            <span style="font-size: 10px; font-weight: 700; color: #0369A1; background: #E0F2FE; padding: 2px 7px; border-radius: 4px;">{pill_b}</span>
                         </div>
-                        <div style="font-size: 13.5px; font-weight: 600; color: #1E293B; font-family: monospace; margin-bottom: 6px;">📎 bank_statement.pdf <span style="font-size: 12px; font-weight: 400; color: #64748B;">({b_kb:.1f} KB)</span></div>
-                        <div style="font-size: 12.5px; color: #475569; line-height: 1.5;">12-Month Operative CA/CC Cash Flow Ledger</div>
+                        <div style="font-size: 12px; font-weight: 600; color: #1E293B; font-family: monospace; margin-bottom: 3px;">📎 bank_statement.pdf <span style="font-size: 11px; font-weight: 400; color: #64748B;">({b_kb:.1f} KB)</span></div>
+                        <div style="font-size: 11.5px; color: #475569; line-height: 1.4;">12-Month Operative CA/CC Cash Flow Ledger</div>
                     </div>
-                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 9px 12px; margin-top: 14px; display: flex; justify-content: space-between; font-size: 0.78rem; color: #475569;">
-                        <span title="SHA-256 Digest: {bank_full_hash}" style="color: #0F766E; font-weight: 600; cursor: help;">🔒 Tamper-Sealed Stream</span>
+                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 5px; padding: 6px 10px; margin-top: 6px; display: flex; justify-content: space-between; font-size: 11px; color: #475569;">
+                        <span title="SHA-256 Digest: {bank_full_hash}" style="color: #0F766E; font-weight: 600; cursor: help;">Tamper-Sealed Stream</span>
                         <span>Scope: <b>5 Ledger Fields</b></span>
                     </div>
                 </div>
@@ -293,17 +243,17 @@ if is_sample_active or bank_bytes or gst_bytes or itr_bytes:
         with col_d2:
             st.markdown(
                 f"""
-                <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 3.5px solid #059669; border-radius: 10px; padding: 20px 22px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04); min-height: 184px; display: flex; flex-direction: column; justify-content: space-between;">
+                <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 3px solid #059669; border-radius: 8px; padding: 12px 14px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04); min-height: 128px; display: flex; flex-direction: column; justify-content: space-between;">
                     <div>
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                            <strong style="font-size: 14px; color: #0F766E; letter-spacing: 0.02em;">📑 GSTR-3B TAX RETURN</strong>
-                            <span style="font-size: 11px; font-weight: 700; color: #047857; background: #D1FAE5; padding: 3px 9px; border-radius: 5px;">{pill_g}</span>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <strong style="font-size: 12.5px; color: #0F766E; letter-spacing: 0.01em;">GSTR-3B TAX RETURN</strong>
+                            <span style="font-size: 10px; font-weight: 700; color: #047857; background: #D1FAE5; padding: 2px 7px; border-radius: 4px;">{pill_g}</span>
                         </div>
-                        <div style="font-size: 13.5px; font-weight: 600; color: #1E293B; font-family: monospace; margin-bottom: 6px;">📎 gstr3b.pdf <span style="font-size: 12px; font-weight: 400; color: #64748B;">({g_kb:.1f} KB)</span></div>
-                        <div style="font-size: 12.5px; color: #475569; line-height: 1.5;">Monthly Taxable Outward Supplies & Statutory ITC</div>
+                        <div style="font-size: 12px; font-weight: 600; color: #1E293B; font-family: monospace; margin-bottom: 3px;">📎 gstr3b.pdf <span style="font-size: 11px; font-weight: 400; color: #64748B;">({g_kb:.1f} KB)</span></div>
+                        <div style="font-size: 11.5px; color: #475569; line-height: 1.4;">Monthly Taxable Outward Supplies & Statutory ITC</div>
                     </div>
-                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 9px 12px; margin-top: 14px; display: flex; justify-content: space-between; font-size: 0.78rem; color: #475569;">
-                        <span title="SHA-256 Digest: {gst_full_hash}" style="color: #0F766E; font-weight: 600; cursor: help;">🔒 Tamper-Sealed Stream</span>
+                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 5px; padding: 6px 10px; margin-top: 6px; display: flex; justify-content: space-between; font-size: 11px; color: #475569;">
+                        <span title="SHA-256 Digest: {gst_full_hash}" style="color: #0F766E; font-weight: 600; cursor: help;">Tamper-Sealed Stream</span>
                         <span>Scope: <b>2 Tax Fields</b></span>
                     </div>
                 </div>
@@ -313,17 +263,17 @@ if is_sample_active or bank_bytes or gst_bytes or itr_bytes:
         with col_d3:
             st.markdown(
                 f"""
-                <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 3.5px solid #6D28D9; border-radius: 10px; padding: 20px 22px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04); min-height: 184px; display: flex; flex-direction: column; justify-content: space-between;">
+                <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 3px solid #6D28D9; border-radius: 8px; padding: 12px 14px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04); min-height: 128px; display: flex; flex-direction: column; justify-content: space-between;">
                     <div>
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                            <strong style="font-size: 14px; color: #4338CA; letter-spacing: 0.02em;">📑 ITR-V ACKNOWLEDGEMENT</strong>
-                            <span style="font-size: 11px; font-weight: 700; color: #6D28D9; background: #EDE9FE; padding: 3px 9px; border-radius: 5px;">{pill_it}</span>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <strong style="font-size: 12.5px; color: #4338CA; letter-spacing: 0.01em;">ITR-V ACKNOWLEDGEMENT</strong>
+                            <span style="font-size: 10px; font-weight: 700; color: #6D28D9; background: #EDE9FE; padding: 2px 7px; border-radius: 4px;">{pill_it}</span>
                         </div>
-                        <div style="font-size: 13.5px; font-weight: 600; color: #1E293B; font-family: monospace; margin-bottom: 6px;">📎 itr_acknowledgement.pdf <span style="font-size: 12px; font-weight: 400; color: #64748B;">({it_kb:.1f} KB)</span></div>
-                        <div style="font-size: 12.5px; color: #475569; line-height: 1.5;">Audited Balance Sheet, P&L & Net Worth Filing</div>
+                        <div style="font-size: 12px; font-weight: 600; color: #1E293B; font-family: monospace; margin-bottom: 3px;">📎 itr_acknowledgement.pdf <span style="font-size: 11px; font-weight: 400; color: #64748B;">({it_kb:.1f} KB)</span></div>
+                        <div style="font-size: 11.5px; color: #475569; line-height: 1.4;">Audited Balance Sheet, P&L & Net Worth Filing</div>
                     </div>
-                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 9px 12px; margin-top: 14px; display: flex; justify-content: space-between; font-size: 0.78rem; color: #475569;">
-                        <span title="SHA-256 Digest: {itr_full_hash}" style="color: #0F766E; font-weight: 600; cursor: help;">🔒 Tamper-Sealed Stream</span>
+                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 5px; padding: 6px 10px; margin-top: 6px; display: flex; justify-content: space-between; font-size: 11px; color: #475569;">
+                        <span title="SHA-256 Digest: {itr_full_hash}" style="color: #0F766E; font-weight: 600; cursor: help;">Tamper-Sealed Stream</span>
                         <span>Scope: <b>7 Solvency Fields</b></span>
                     </div>
                 </div>
@@ -332,9 +282,9 @@ if is_sample_active or bank_bytes or gst_bytes or itr_bytes:
             )
     else:
         recon_badge = (
-            '<span style="font-size: 11px; font-weight: 700; color: #047857; background: #D1FAE5; padding: 3px 9px; border-radius: 5px;">● LEDGER BALANCED</span>'
+            '<span style="font-size: 10px; font-weight: 700; color: #047857; background: #D1FAE5; padding: 2px 7px; border-radius: 4px;">● LEDGER BALANCED</span>'
             if recon_balanced else
-            f'<span style="font-size: 11px; font-weight: 700; color: #B91C1C; background: #FEE2E2; padding: 3px 9px; border-radius: 5px;">⚠️ DISCREPANCY</span>'
+            f'<span style="font-size: 10px; font-weight: 700; color: #B91C1C; background: #FEE2E2; padding: 2px 7px; border-radius: 4px;">⚠️ DISCREPANCY</span>'
         )
         bounces_metric = (
             '<span style="color: #047857; font-weight: 700;">0 Clean</span>'
@@ -342,29 +292,29 @@ if is_sample_active or bank_bytes or gst_bytes or itr_bytes:
             f'<span style="color: #B91C1C; font-weight: 700;">{bounces_cnt} Risk</span>'
         )
         if gap_val <= 10.0:
-            gst_badge = f'<span style="font-size: 11px; font-weight: 700; color: #047857; background: #D1FAE5; padding: 3px 9px; border-radius: 5px;">● {gap_str} GAP</span>'
+            gst_badge = f'<span style="font-size: 10px; font-weight: 700; color: #047857; background: #D1FAE5; padding: 2px 7px; border-radius: 4px;">● {gap_str} GAP</span>'
         elif gap_val <= 20.0:
-            gst_badge = f'<span style="font-size: 11px; font-weight: 700; color: #B45309; background: #FEF3C7; padding: 3px 9px; border-radius: 5px;">● {gap_str} GAP</span>'
+            gst_badge = f'<span style="font-size: 10px; font-weight: 700; color: #B45309; background: #FEF3C7; padding: 2px 7px; border-radius: 4px;">● {gap_str} GAP</span>'
         else:
-            gst_badge = f'<span style="font-size: 11px; font-weight: 700; color: #B91C1C; background: #FEE2E2; padding: 3px 9px; border-radius: 5px;">⚠️ {gap_str} DIVERGENCE</span>'
-        itr_badge = '<span style="font-size: 11px; font-weight: 700; color: #6D28D9; background: #EDE9FE; padding: 3px 9px; border-radius: 5px;">● AUDITED</span>'
+            gst_badge = f'<span style="font-size: 10px; font-weight: 700; color: #B91C1C; background: #FEE2E2; padding: 2px 7px; border-radius: 4px;">⚠️ {gap_str} DIVERGENCE</span>'
+        itr_badge = '<span style="font-size: 10px; font-weight: 700; color: #6D28D9; background: #EDE9FE; padding: 2px 7px; border-radius: 4px;">● AUDITED</span>'
 
         with col_d1:
             st.markdown(
                 f"""
-                <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 3.5px solid #0284C7; border-radius: 10px; padding: 20px 22px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04); min-height: 184px; display: flex; flex-direction: column; justify-content: space-between;">
+                <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 3px solid #0284C7; border-radius: 8px; padding: 12px 14px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04); min-height: 128px; display: flex; flex-direction: column; justify-content: space-between;">
                     <div>
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                            <strong style="font-size: 14px; color: #0B1F3A; letter-spacing: 0.02em;">📄 OPERATIVE BANK LEDGER</strong>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                            <strong style="font-size: 12.5px; color: #0B1F3A; letter-spacing: 0.01em;">OPERATIVE BANK LEDGER</strong>
                             {recon_badge}
                         </div>
-                        <div style="font-size: 12px; color: #64748B; margin-top: 3px;">12M Inward Banking Credits</div>
-                        <div style="font-size: 22px; font-weight: 800; color: #0B1F3A; margin: 4px 0 8px 0;">{format_inr(bank_c)}</div>
+                        <div style="font-size: 11px; color: #64748B; margin-top: 1px;">12M Inward Banking Credits</div>
+                        <div style="font-size: 18px; font-weight: 800; color: #0B1F3A; margin: 2px 0 6px 0; font-feature-settings: 'tnum';">{format_inr(bank_c)}</div>
                     </div>
-                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 9px 12px; margin-top: 12px; display: flex; justify-content: space-between; font-size: 0.78rem; color: #475569;">
+                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 5px; padding: 6px 10px; margin-top: 6px; display: flex; justify-content: space-between; font-size: 11px; color: #475569;">
                         <span><b>Net Flow:</b> {format_inr(net_cashflow)}</span>
                         <span><b>Bounces:</b> {bounces_metric}</span>
-                        <span title="SHA-256 Digest: {bank_full_hash}" style="color: #0F766E; font-weight: 600; cursor: help;">🔒 Tamper-Sealed</span>
+                        <span title="SHA-256 Digest: {bank_full_hash}" style="color: #0F766E; font-weight: 600; cursor: help;">Tamper-Sealed</span>
                     </div>
                 </div>
                 """,
@@ -373,19 +323,19 @@ if is_sample_active or bank_bytes or gst_bytes or itr_bytes:
         with col_d2:
             st.markdown(
                 f"""
-                <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 3.5px solid #059669; border-radius: 10px; padding: 20px 22px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04); min-height: 184px; display: flex; flex-direction: column; justify-content: space-between;">
+                <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 3px solid #059669; border-radius: 8px; padding: 12px 14px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04); min-height: 128px; display: flex; flex-direction: column; justify-content: space-between;">
                     <div>
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                            <strong style="font-size: 14px; color: #0F766E; letter-spacing: 0.02em;">📑 GSTR-3B STATUTORY RETURN</strong>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                            <strong style="font-size: 12.5px; color: #0F766E; letter-spacing: 0.01em;">GSTR-3B STATUTORY RETURN</strong>
                             {gst_badge}
                         </div>
-                        <div style="font-size: 12px; color: #64748B; margin-top: 3px;">Declared Outward Taxable Sales</div>
-                        <div style="font-size: 22px; font-weight: 800; color: #0B1F3A; margin: 4px 0 8px 0;">{format_inr(gst_t)}</div>
+                        <div style="font-size: 11px; color: #64748B; margin-top: 1px;">Declared Outward Taxable Sales</div>
+                        <div style="font-size: 18px; font-weight: 800; color: #0B1F3A; margin: 2px 0 6px 0; font-feature-settings: 'tnum';">{format_inr(gst_t)}</div>
                     </div>
-                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 9px 12px; margin-top: 12px; display: flex; justify-content: space-between; font-size: 0.78rem; color: #475569;">
+                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 5px; padding: 6px 10px; margin-top: 6px; display: flex; justify-content: space-between; font-size: 11px; color: #475569;">
                         <span><b>Tax Paid:</b> {format_inr(gst_tax_paid)}</span>
                         <span><b>Realization:</b> {vel_pct:.1f}%</span>
-                        <span title="SHA-256 Digest: {gst_full_hash}" style="color: #0F766E; font-weight: 600; cursor: help;">🔒 Tamper-Sealed</span>
+                        <span title="SHA-256 Digest: {gst_full_hash}" style="color: #0F766E; font-weight: 600; cursor: help;">Tamper-Sealed</span>
                     </div>
                 </div>
                 """,
@@ -394,19 +344,19 @@ if is_sample_active or bank_bytes or gst_bytes or itr_bytes:
         with col_d3:
             st.markdown(
                 f"""
-                <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 3.5px solid #6D28D9; border-radius: 10px; padding: 20px 22px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04); min-height: 184px; display: flex; flex-direction: column; justify-content: space-between;">
+                <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 3px solid #6D28D9; border-radius: 8px; padding: 12px 14px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04); min-height: 128px; display: flex; flex-direction: column; justify-content: space-between;">
                     <div>
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                            <strong style="font-size: 14px; color: #4338CA; letter-spacing: 0.02em;">📑 ITR-V AUDITED FINANCIALS</strong>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                            <strong style="font-size: 12.5px; color: #4338CA; letter-spacing: 0.01em;">ITR-V AUDITED FINANCIALS</strong>
                             {itr_badge}
                         </div>
-                        <div style="font-size: 12px; color: #64748B; margin-top: 3px;">Audited Gross Revenue</div>
-                        <div style="font-size: 22px; font-weight: 800; color: #0B1F3A; margin: 4px 0 8px 0;">{format_inr(itr_g)}</div>
+                        <div style="font-size: 11px; color: #64748B; margin-top: 1px;">Audited Gross Revenue</div>
+                        <div style="font-size: 18px; font-weight: 800; color: #0B1F3A; margin: 2px 0 6px 0; font-feature-settings: 'tnum';">{format_inr(itr_g)}</div>
                     </div>
-                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 9px 12px; margin-top: 12px; display: flex; justify-content: space-between; font-size: 0.78rem; color: #475569;">
+                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 5px; padding: 6px 10px; margin-top: 6px; display: flex; justify-content: space-between; font-size: 11px; color: #475569;">
                         <span><b>PAT:</b> {format_inr(itr_pat)}</span>
                         <span><b>Net Worth:</b> {format_inr(itr_nw)}</span>
-                        <span title="SHA-256 Digest: {itr_full_hash}" style="color: #0F766E; font-weight: 600; cursor: help;">🔒 Tamper-Sealed</span>
+                        <span title="SHA-256 Digest: {itr_full_hash}" style="color: #0F766E; font-weight: 600; cursor: help;">Tamper-Sealed</span>
                     </div>
                 </div>
                 """,
@@ -419,11 +369,44 @@ if is_sample_active or bank_bytes or gst_bytes or itr_bytes:
 # 2. FULL-WIDTH INGESTION PIPELINE RIBBON & 3x2 / 4-PILLAR VERIFICATION GATES
 # ----------------------------------------------------------------------------
 if not has_all_docs:
-    render_callout(
-        "Mandatory Document Trinity incomplete. Please upload Bank Statement, GSTR-3B, and ITR Form above, or choose a Sample Case.",
-        title="Documents Pending",
-        variant="warning",
-    )
+    st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
+    card_col1, card_col2, card_col3 = st.columns(3)
+    with card_col1:
+        st.markdown(
+            """<div style="border: 1.5px dashed #CBD5E1; border-radius: 8px; padding: 12px 14px; background: #F8FAFC; text-align: center; min-height: 128px; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                <div style="font-size: 20px; margin-bottom: 4px;">📄</div>
+                <div style="font-size: 12px; font-weight: 700; color: #0B1F3A; letter-spacing: 0.01em;">OPERATIVE BANK STATEMENT</div>
+                <div style="font-size: 11px; color: #64748B; margin: 2px 0 6px 0;">12-Month Operative CA/CC Cash Flow Ledger</div>
+                <span style="font-size: 9.5px; font-weight: 700; color: #64748B; background: #F1F5F9; border: 1px solid #E2E8F0; padding: 2px 8px; border-radius: 4px;">Awaiting Upload</span>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+    with card_col2:
+        st.markdown(
+            """<div style="border: 1.5px dashed #CBD5E1; border-radius: 8px; padding: 12px 14px; background: #F8FAFC; text-align: center; min-height: 128px; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                <div style="font-size: 20px; margin-bottom: 4px;">📑</div>
+                <div style="font-size: 12px; font-weight: 700; color: #0B1F3A; letter-spacing: 0.01em;">GSTR-3B TAX RETURN</div>
+                <div style="font-size: 11px; color: #64748B; margin: 2px 0 6px 0;">Monthly Taxable Outward Supplies & Statutory ITC</div>
+                <span style="font-size: 9.5px; font-weight: 700; color: #64748B; background: #F1F5F9; border: 1px solid #E2E8F0; padding: 2px 8px; border-radius: 4px;">Awaiting Upload</span>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+    with card_col3:
+        st.markdown(
+            """<div style="border: 1.5px dashed #CBD5E1; border-radius: 8px; padding: 12px 14px; background: #F8FAFC; text-align: center; min-height: 128px; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                <div style="font-size: 20px; margin-bottom: 4px;">📑</div>
+                <div style="font-size: 12px; font-weight: 700; color: #0B1F3A; letter-spacing: 0.01em;">ITR-V ACKNOWLEDGEMENT</div>
+                <div style="font-size: 11px; color: #64748B; margin: 2px 0 6px 0;">Audited Balance Sheet, P&L & Net Worth Filing</div>
+                <span style="font-size: 9.5px; font-weight: 700; color: #64748B; background: #F1F5F9; border: 1px solid #E2E8F0; padding: 2px 8px; border-radius: 4px;">Awaiting Upload</span>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
+    c_btn_l, c_btn_mid, c_btn_r = st.columns([1, 2, 1])
+    with c_btn_mid:
+        if st.button("Open Commercial Document Ingestion Room", key="btn_open_custom_modal_empty", type="primary", width="stretch"):
+            show_custom_upload_dialog()
 else:
     # Full-Width Horizontal Ingestion Pipeline Ribbon (Clean, Linear, Zero Duplicate Tables)
     st.markdown("<div style='margin-top: 12px;'></div>", unsafe_allow_html=True)
@@ -431,8 +414,8 @@ else:
         col_pipe_left, col_pipe_right = st.columns([3.2, 1.8], vertical_alignment="center")
         with col_pipe_left:
             st.markdown(
-                '<div style="font-size: 1.02rem; font-weight: 700; color: #0F172A; margin-bottom: 6px;">'
-                '⚙️ Document Ingestion & Optical Parsing Pipeline</div>',
+                '<div style="font-size: 0.95rem; font-weight: 700; color: #0F172A; margin-bottom: 2px;">'
+                'Document Ingestion & Optical Parsing Pipeline</div>',
                 unsafe_allow_html=True,
             )
             engine_choice = st.radio(
@@ -445,7 +428,7 @@ else:
             use_gemini = "Gemini" in engine_choice
         with col_pipe_right:
             scan_btn = st.button(
-                "⚡ Re-Run Extraction" if is_extracted else "⚡ Run Extraction Pipeline (3 Parallel Threads)",
+                "Re-Run Extraction" if is_extracted else "Run Extraction Pipeline (3 Parallel Threads)",
                 key="btn_run_extraction",
                 type="secondary" if is_extracted else "primary",
                 use_container_width=True,
@@ -453,7 +436,6 @@ else:
 
     # 3. Refined 3x2 Verification Scope Grid (Aligned vertically with the top 3 cards)
     if not is_extracted:
-        st.markdown("<div style='margin-top: 16px;'></div>", unsafe_allow_html=True)
         col_r1_1, col_r1_2, col_r1_3 = st.columns(3)
         with col_r1_1:
             st.markdown(
@@ -461,7 +443,7 @@ else:
                 <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 16px 18px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03); min-height: 136px; display: flex; flex-direction: column; justify-content: space-between;">
                     <div>
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-size: 0.94rem; font-weight: 700; color: #0F172A;">⚖️ Arithmetic Cash Reconciliation</span>
+                            <span style="font-size: 0.94rem; font-weight: 700; color: #0F172A;">Arithmetic Cash Reconciliation</span>
                             <span style="background: #E0F2FE; color: #0369A1; font-size: 0.76rem; font-weight: 700; padding: 3px 9px; border-radius: 4px;">± ₹ 1.00 Tolerance</span>
                         </div>
                         <div style="font-size: 0.83rem; color: #475569; margin: 8px 0 12px 0; line-height: 1.5;">Opening + Total Inflows − Debits = Closing Balance</div>
@@ -479,7 +461,7 @@ else:
                 <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 16px 18px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03); min-height: 136px; display: flex; flex-direction: column; justify-content: space-between;">
                     <div>
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-size: 0.94rem; font-weight: 700; color: #0F172A;">🔄 Mandate Clearing Track Record</span>
+                            <span style="font-size: 0.94rem; font-weight: 700; color: #0F172A;">Mandate Clearing Track Record</span>
                             <span style="background: #FEE2E2; color: #B91C1C; font-size: 0.76rem; font-weight: 700; padding: 3px 9px; border-radius: 4px;">&lt; 5 Bounces</span>
                         </div>
                         <div style="font-size: 0.83rem; color: #475569; margin: 8px 0 12px 0; line-height: 1.5;">12-month inward returns scanned; ≥ 5 trigger Hard Knockout</div>
@@ -497,7 +479,7 @@ else:
                 <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 16px 18px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03); min-height: 136px; display: flex; flex-direction: column; justify-content: space-between;">
                     <div>
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-size: 0.94rem; font-weight: 700; color: #0F172A;">📊 Statutory Turnover Concordance</span>
+                            <span style="font-size: 0.94rem; font-weight: 700; color: #0F172A;">Statutory Turnover Concordance</span>
                             <span style="background: #FEF3C7; color: #B45309; font-size: 0.76rem; font-weight: 700; padding: 3px 9px; border-radius: 4px;">≤ 15.0% Variance</span>
                         </div>
                         <div style="font-size: 0.83rem; color: #475569; margin: 8px 0 12px 0; line-height: 1.5;">GSTR-3B declared outward supplies vs banking credit inflows</div>
@@ -517,7 +499,7 @@ else:
                 <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 16px 18px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03); min-height: 136px; display: flex; flex-direction: column; justify-content: space-between;">
                     <div>
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-size: 0.94rem; font-weight: 700; color: #0F172A;">📈 Debt Service Coverage (DSCR)</span>
+                            <span style="font-size: 0.94rem; font-weight: 700; color: #0F172A;">Debt Service Coverage (DSCR)</span>
                             <span style="background: #DCFCE7; color: #15803D; font-size: 0.76rem; font-weight: 700; padding: 3px 9px; border-radius: 4px;">≥ 1.25x Hurdle</span>
                         </div>
                         <div style="font-size: 0.83rem; color: #475569; margin: 8px 0 12px 0; line-height: 1.5;">EBITDA / Proposed Annual EMI required for facility sanction</div>
@@ -535,7 +517,7 @@ else:
                 <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 16px 18px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03); min-height: 136px; display: flex; flex-direction: column; justify-content: space-between;">
                     <div>
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-size: 0.94rem; font-weight: 700; color: #0F172A;">🏛️ Capital & Solvency Check</span>
+                            <span style="font-size: 0.94rem; font-weight: 700; color: #0F172A;">Capital & Solvency Check</span>
                             <span style="background: #EDE9FE; color: #6D28D9; font-size: 0.76rem; font-weight: 700; padding: 3px 9px; border-radius: 4px;">≤ 3.00x D/E Cap</span>
                         </div>
                         <div style="font-size: 0.83rem; color: #475569; margin: 8px 0 12px 0; line-height: 1.5;">Positive Tangible Net Worth and leverage ceiling compliance</div>
@@ -553,7 +535,7 @@ else:
                 <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 16px 18px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03); min-height: 136px; display: flex; flex-direction: column; justify-content: space-between;">
                     <div>
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-size: 0.94rem; font-weight: 700; color: #0F172A;">🔒 Collateral Coverage Ratio</span>
+                            <span style="font-size: 0.94rem; font-weight: 700; color: #0F172A;">Collateral Coverage Ratio</span>
                             <span style="background: #F1F5F9; color: #334155; font-size: 0.76rem; font-weight: 700; padding: 3px 9px; border-radius: 4px;">{cover_pct:.1f}% Covered</span>
                         </div>
                         <div style="font-size: 0.83rem; color: #475569; margin: 8px 0 12px 0; line-height: 1.5;">₹{collat_lakhs:.1f}L security value against ₹{loan_lakhs:.1f}L proposed facility</div>
@@ -587,8 +569,6 @@ else:
         # --------------------------------------------------------------------
         # POST-EXTRACTION: 4-PILLAR STATUTORY GATE VERIFICATION CARDS
         # --------------------------------------------------------------------
-        st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
-
         p1_pass = recon_balanced and (recon_diff_num < 1.0)
         p1_color = "#0284C7" if p1_pass else "#DC2626"
         p1_badge = '<span style="font-size: 10px; font-weight: 700; color: #047857; background: #DCFCE7; padding: 2px 7px; border-radius: 4px;">● PASS</span>' if p1_pass else f'<span style="font-size: 10px; font-weight: 700; color: #B91C1C; background: #FEE2E2; padding: 2px 7px; border-radius: 4px;">⚠️ BREACH</span>'
@@ -689,12 +669,29 @@ else:
                 active_gemini_key = (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")) if use_gemini else None
                 if active_gemini_key == "your_gemini_api_key_here":
                     active_gemini_key = None
+                if cohort_selection == "None (Manual Upload)":
+                    ident = st.session_state.get("custom_extracted_identifiers")
+                    if not ident:
+                        ident = extract_entity_identifiers(bank_bytes, gst_bytes, itr_bytes)
+                    sync_extracted_identifiers_to_state(ident)
+
+                active_comp = (
+                    st.session_state.get("custom_company_name") or "Manual Applicant Company"
+                    if cohort_selection == "None (Manual Upload)"
+                    else COHORT_COMPANY_NAMES.get(cohort_selection, "Manual Applicant Company")
+                )
+                active_cin_pan = (
+                    (st.session_state.get("active_cin_selection") or st.session_state.get("active_pan_input") or "UNKNOWN")
+                    if cohort_selection == "None (Manual Upload)"
+                    else (cin_parsed_data.get("cin") if cin_parsed_data else (ctx.get("cin_input") or current_pan_val or "UNKNOWN"))
+                )
+
                 credit_case, meta = extract_all_documents(
                     bank_bytes=bank_bytes,
                     gst_bytes=gst_bytes,
                     itr_bytes=itr_bytes,
-                    company_name=COHORT_COMPANY_NAMES.get(cohort_selection, "Manual Applicant Company"),
-                    cin_or_pan=(cin_parsed_data["cin"] if cin_parsed_data else (ctx.get("cin_input") or current_pan_val or "UNKNOWN")),
+                    company_name=active_comp,
+                    cin_or_pan=active_cin_pan,
                     requested_loan_amount=Decimal(str(loan_amount)),
                     proposed_emi=Decimal(str(proposed_emi)),
                     proposed_rate=Decimal(str(interest_rate)),
@@ -808,6 +805,15 @@ else:
         # --------------------------------------------------------------------
         # 4. HITL VERIFICATION GRID IN BORDERED CONTAINER
         # --------------------------------------------------------------------
+        if st.session_state.get("document_pan_mismatch"):
+            intake_p, doc_p = st.session_state.document_pan_mismatch
+            render_callout(
+                f"⚠️ Entity Inconsistency Detected: Declared Intake PAN ({intake_p}) differs from Extracted Document PAN ({doc_p}). "
+                f"Cross-document entity triangulation discrepancy recorded.",
+                title="Cross-Document Entity Inconsistency Alert",
+                variant="warning",
+            )
+
         with st.container(border=True):
             st.markdown(
                 """
@@ -849,7 +855,7 @@ else:
                 },
                 disabled=["Parameter", "Source_Document", "Page", "Confidence", "Status"],
                 hide_index=True,
-                height=525,
+                height=min(495, (len(st.session_state.editable_df) + 1) * 35 + 10),
                 width="stretch",
                 num_rows="fixed",
                 key="hitl_data_editor",
@@ -948,44 +954,99 @@ else:
             render_callout(f"Ledger Equation Reconciled via Officer Corrections: Opening ({format_inr(Decimal(str(live_open)))}) + Inward ({format_inr(Decimal(str(live_inward)))}) - Outward ({format_inr(Decimal(str(live_outward)))}) = Closing ({format_inr(Decimal(str(live_close)))}). Math variance is ₹0.00.", title="✓ Ledger Math Balanced", variant="success")
 
         # --------------------------------------------------------------------
-        # 5. BOTTOM ACTION FOOTER & STATE-GATED STATUS BANNER
+        # 5. BOTTOM COMMAND DOCK & ATTESTATION BAR
         # --------------------------------------------------------------------
-        st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
         btn_lock_bottom = False
         btn_reset_bottom = False
 
-        if is_locked:
-            st.success("✅ Financial ledger verified and cryptographically locked. Proceed to Stage 3 for Five Cs risk scoring.")
-            
-            # Primary Forward Progression
-            if st.button("Proceed to Decision Scorecard →", type="primary", key="btn_next_decision", width="stretch"):
-                st.session_state.decision_sub_stage = "scorecard"
-                st.session_state.current_page = "Decision"
-                st.switch_page("app_pages/decision.py")
-            
-            # Secondary Utilities
-            f_col1, f_col2 = st.columns([1, 1], vertical_alignment="center")
-            with f_col1:
-                btn_lock_bottom = st.button("🔒 Confirm & Re-Lock Financials", type="secondary", key="btn_confirm_lock", width="stretch")
-            with f_col2:
-                btn_reset_bottom = st.button("↺ Reset Extraction", type="secondary", key="btn_reset_extraction", width="stretch")
-        else:
-            f_col1, f_col2 = st.columns([3, 1], vertical_alignment="center")
-            with f_col1:
-                btn_lock_bottom = st.button("🔒 Confirm & Lock Financials", type="primary", key="btn_confirm_lock", width="stretch")
-            with f_col2:
-                btn_reset_bottom = st.button("↺ Reset Extraction", type="secondary", key="btn_reset_extraction", width="stretch")
+        with st.container(border=True):
+            if is_locked:
+                col_status, col_reset, col_relock, col_proceed = st.columns(
+                    [3.3, 1.1, 1.5, 2.1],
+                    vertical_alignment="center",
+                )
+                with col_status:
+                    st.markdown(
+                        """
+                        <div style="display: flex; align-items: center; gap: 8px; line-height: 1.25;">
+                            <span style="display: inline-flex; align-items: center; gap: 4px; background: #ECFDF5; color: #047857; border: 1px solid #A7F3D0; padding: 3px 8px; border-radius: 6px; font-size: 0.76rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase;">
+                                Sealed
+                            </span>
+                            <div style="display: flex; flex-direction: column;">
+                                <span style="font-size: 0.82rem; font-weight: 600; color: #0F172A;">Ledger Cryptographically Locked</span>
+                                <span style="font-size: 0.72rem; color: #64748B;">Audit hash active • Cleared for Stage 3 Five-Cs Risk Scoring</span>
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                with col_reset:
+                    btn_reset_bottom = st.button("↺ Reset Extraction", type="secondary", key="btn_reset_extraction", width="stretch")
+                with col_relock:
+                    btn_lock_bottom = st.button("Confirm & Re-Lock Financials", type="secondary", key="btn_confirm_lock", width="stretch")
+                with col_proceed:
+                    if st.button("Proceed to Decision Scorecard →", type="primary", key="btn_next_decision", width="stretch"):
+                        st.session_state.decision_sub_stage = "scorecard"
+                        st.session_state.current_page = "Decision"
+                        st.switch_page("app_pages/decision.py")
+            else:
+                col_status, col_reset, col_lock = st.columns(
+                    [3.6, 1.2, 2.2],
+                    vertical_alignment="center",
+                )
+                with col_status:
+                    st.markdown(
+                        """
+                        <div style="display: flex; align-items: center; gap: 8px; line-height: 1.25;">
+                            <span style="display: inline-flex; align-items: center; gap: 4px; background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1; padding: 3px 8px; border-radius: 6px; font-size: 0.76rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase;">
+                                ● Verification
+                            </span>
+                            <div style="display: flex; flex-direction: column;">
+                                <span style="font-size: 0.82rem; font-weight: 600; color: #0F172A;">Officer Review Pending</span>
+                                <span style="font-size: 0.72rem; color: #64748B;">Verify line items above, then lock to authorize Five-Cs scoring</span>
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                with col_reset:
+                    btn_reset_bottom = st.button("↺ Reset Extraction", type="secondary", key="btn_reset_extraction", width="stretch")
+                with col_lock:
+                    btn_lock_bottom = st.button("Confirm & Lock Financials", type="primary", key="btn_confirm_lock", width="stretch")
 
         if btn_reset_bottom:
             st.session_state.extracted_case = None
+            st.session_state.extraction_meta = None
             st.session_state.editable_df = None
             st.session_state.original_df = None
             st.session_state.locked_case = None
             st.session_state.locked_financials_hash = None
             st.session_state.scored_financials_hash = None
+            st.session_state.scored_composite_hash = None
             st.session_state.score_result = None
+            st.session_state.executive_override = None
+            st.session_state.officer_notes = []
             st.session_state.cam_markdown = None
+            st.session_state.current_research_report = None
+            st.session_state.last_research_cache_key = None
             st.session_state.hitl_confirmed = False
+
+            # If in manual upload mode, reset custom extracted identifiers so sidebar cleanly reverts to Awaiting Document Extraction
+            if cohort_selection == "None (Manual Upload)":
+                st.session_state.custom_company_name = None
+                st.session_state.custom_extracted_identifiers = None
+                st.session_state.active_cin_selection = "UNREGISTERED_MSME"
+                st.session_state.case_cin_input = "UNREGISTERED_MSME"
+                st.session_state.active_pan_input = ""
+                st.session_state.case_pan_input = ""
+                st.session_state.app_id = generate_application_id("Manual Applicant Company")
+
+            record_event(
+                event_type="EXTRACTION_RESET_BY_OFFICER",
+                actor="OFFICER",
+                details={"cohort": cohort_selection, "action": "RESET_EXTRACTION"},
+                severity="INFO",
+            )
             st.rerun()
 
         if btn_lock_bottom:
@@ -1091,14 +1152,36 @@ else:
                         officer_verified=True,
                     )
 
+                    active_company_name = (
+                        st.session_state.get("custom_company_name") or "Manual Applicant Company"
+                        if cohort_selection == "None (Manual Upload)"
+                        else COHORT_COMPANY_NAMES.get(cohort_selection, "Manual Applicant Company")
+                    )
+                    active_cin_or_pan = (
+                        (st.session_state.get("active_cin_selection") or st.session_state.get("active_pan_input") or "UNKNOWN")
+                        if cohort_selection == "None (Manual Upload)"
+                        else (cin_parsed_data.get("cin") if cin_parsed_data else (ctx.get("cin_input") or current_pan_val or "UNKNOWN"))
+                    )
+                    active_pan_final = (
+                        st.session_state.get("active_pan_input")
+                        or st.session_state.get("custom_extracted_pan")
+                        or current_pan_val
+                        or ""
+                    )
+
+                    collat_val_dec = Decimal(str(ctx.get("collateral_val", "0.0")))
+                    cgtmse_cov_bool = bool(ctx.get("cgtmse_covered", False))
+
                     locked_case = CreditCase(
-                        company_name=COHORT_COMPANY_NAMES.get(cohort_selection, "Manual Applicant Company"),
-                        cin_or_pan=(cin_parsed_data["cin"] if cin_parsed_data else (ctx.get("cin_input") or current_pan_val or "UNKNOWN")),
-                        pan=current_pan_val,
+                        company_name=active_company_name,
+                        cin_or_pan=active_cin_or_pan,
+                        pan=active_pan_final,
                         requested_loan_amount=Decimal(str(loan_amount)),
                         proposed_emi=Decimal(str(proposed_emi)),
                         proposed_rate=Decimal(str(interest_rate)),
                         proposed_tenure_months=int(tenure_months),
+                        collateral_value=collat_val_dec,
+                        cgtmse_covered=cgtmse_cov_bool,
                         officer_verified=True,
                         bank_data=b_data,
                         gst_data=g_data,
