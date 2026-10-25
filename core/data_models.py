@@ -115,13 +115,15 @@ class CreditCase(BaseModel):
     proposed_emi: Optional[Decimal] = None
     proposed_rate: Optional[Decimal] = None
     proposed_tenure_months: Optional[int] = None
+    collateral_value: Optional[Decimal] = Decimal("0.00")
+    cgtmse_covered: bool = False
     officer_verified: bool = False
     
     bank_data: Optional[BankExtraction] = None
     gst_data: Optional[GSTExtraction] = None
     itr_data: Optional[ITRExtraction] = None
 
-    @field_validator('requested_loan_amount', 'proposed_emi', 'proposed_rate', mode='before')
+    @field_validator('requested_loan_amount', 'proposed_emi', 'proposed_rate', 'collateral_value', mode='before')
     def parse_money(cls, v):
         if v is None:
             return None

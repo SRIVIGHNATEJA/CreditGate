@@ -177,11 +177,19 @@ def check_entity_consistency(
                 f"but PAN 4th character '{entity_char}' denotes '{pan_entity_type}'."
             )
     else:
-        # Sole proprietorships use individual PAN ('P') or partnership ('F')
+        # Unincorporated / Non-corporate MSMEs use non-corporate PAN entities:
+        # P = Proprietor / Individual, F = Partnership Firm, H = HUF, A = AOP, T = Trust, B = BOI
         if entity_char == "C":
             mismatch_detected = True
             warning_message = (
-                f"Entity Note: Non-corporate toggle selected, but PAN indicates Registered Company ('C')."
+                f"Entity Mismatch: Non-corporate entity structure selected, but PAN 4th character '{entity_char}' "
+                f"denotes Corporate Company (Expected non-corporate entity e.g. Partnership 'F' or Proprietorship 'P')."
+            )
+        elif entity_char not in ("P", "F", "H", "A", "T", "B"):
+            mismatch_detected = True
+            warning_message = (
+                f"Entity Mismatch: Non-corporate entity structure selected, but PAN 4th character '{entity_char}' "
+                f"denotes '{pan_entity_type}'."
             )
 
     return {
