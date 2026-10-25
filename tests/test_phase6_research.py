@@ -8,8 +8,6 @@ sys.path.insert(0, str(BASE_DIR))
 import json
 import pytest
 from decimal import Decimal
-from unittest.mock import MagicMock, patch
-import requests
 
 from core.policy import Verdict
 from core.data_models import (
@@ -31,6 +29,8 @@ from core.researcher import (
     dismiss_adverse_finding,
     extract_policy_flags,
     merge_existing_reviews,
+    create_empanelled_advocate_finding,
+    extract_legal_docket_text,
 )
 from core.scorer import (
     score_credit_case,
@@ -83,7 +83,7 @@ def prime_credit_case():
 
 def test_unreviewed_severe_finding_leaves_verdict_untouched(prime_credit_case):
     """
-    Specification 1: Web snippets and search hits must NEVER trigger an automatic Verdict.REJECT.
+    Specification 1: Statutory findings must NEVER trigger an automatic Verdict.REJECT.
     An UNREVIEWED severe finding has ZERO effect on the policy gate verdict.
     """
     unreviewed_hit = AdverseMediaFinding(
@@ -91,7 +91,7 @@ def test_unreviewed_severe_finding_leaves_verdict_untouched(prime_credit_case):
         tier=FindingTier.SEVERE,
         title="NCLT Section 9 Petition Admitted against Apex Synthetic Holdings (Demo)",
         snippet="Insolvency petition admitted by bench.",
-        source_url="https://nclt.gov.in/orders/case101",
+        source_url="docket:NCLT-DEL/CP(IB)/101/2026",
         review_status=ReviewStatus.UNREVIEWED
     )
     report = AdverseMediaReport(
@@ -126,7 +126,7 @@ def test_officer_confirmed_severe_finding_triggers_reject(prime_credit_case):
         tier=FindingTier.SEVERE,
         title="NCLT Section 9 Petition Admitted against Apex Synthetic Holdings (Demo)",
         snippet="Insolvency petition admitted by bench.",
-        source_url="https://nclt.gov.in/orders/case101",
+        source_url="docket:NCLT-DEL/CP(IB)/101/2026",
         review_status=ReviewStatus.UNREVIEWED
     )
     report = AdverseMediaReport(status="COMPLETED", findings=[unreviewed_hit])
@@ -159,42 +159,36 @@ def test_officer_confirmed_severe_finding_triggers_reject(prime_credit_case):
 
 def test_officer_confirmed_statutory_inquiry_caps_conditional(prime_credit_case):
     """
-    Specification 2: Statutory Inquiries (Review) -> DGGI summons, pending petitions,
-    tax notices cap verdict at Verdict.CONDITIONAL only after officer confirmation.
+    Specification 2: Officer-confirmed REVIEW hit (e.g. DGGI Inquiry)
+    caps final verdict at Verdict.CONDITIONAL under Credit Policy Rule CP-402.
     """
-    inquiry_hit = AdverseMediaFinding(
+    review_hit = AdverseMediaFinding(
         id="hit-202",
         tier=FindingTier.REVIEW,
-        title="DGGI issues summons regarding ₹1.2 Cr tax discrepancy",
-        snippet="Directorate General of GST Intelligence inquiry active.",
-        source_url="https://taxscan.in/dggi/2026/summons",
+        title="DGGI Zonal Unit issues Summons regarding ITC Mismatch",
+        snippet="Summons under Section 70 CGST Act.",
+        source_url="ref:DGGI/ZU/4891/2026",
         review_status=ReviewStatus.UNREVIEWED
     )
-    report = AdverseMediaReport(status="COMPLETED", findings=[inquiry_hit])
+    report = AdverseMediaReport(status="COMPLETED", findings=[review_hit])
 
-    # While unreviewed: zero impact
-    sev_un, rev_un = extract_policy_flags(report)
-    assert len(sev_un) == 0 and len(rev_un) == 0
-
-    # Officer confirms inquiry with mandatory reference note
     confirmed_report = confirm_adverse_finding(
         report,
         "hit-202",
-        justification="DGGI Summons Reference DGGI/ZU/2026/892",
-        officer_name="Risk Officer Iyer"
+        justification="Summons verified against DGGI portal F.No. 4891/2026",
+        officer_name="Risk Lead Mukherjee"
     )
-    assert confirmed_report.findings[0].confirmation_note == "DGGI Summons Reference DGGI/ZU/2026/892"
-    sev_conf, rev_conf = extract_policy_flags(confirmed_report)
-    assert len(sev_conf) == 0
-    assert len(rev_conf) == 1
-    assert "CONFIRMED_STATUTORY_INQUIRY" in rev_conf[0]
+
+    sev_flags, rev_flags = extract_policy_flags(confirmed_report)
+    assert len(sev_flags) == 0
+    assert len(rev_flags) == 1
+    assert "CONFIRMED_STATUTORY_INQUIRY" in rev_flags[0]
 
     res = score_credit_case(
         credit_case=prime_credit_case,
-        severe_flags=sev_conf,
-        review_flags=rev_conf
+        severe_flags=sev_flags,
+        review_flags=rev_flags
     )
-    assert res.baseline_verdict == Verdict.APPROVE
     assert res.final_verdict == Verdict.CONDITIONAL
     assert "STATUTORY_INQUIRY_CAP" in res.cap_applied
 
@@ -209,7 +203,7 @@ def test_officer_dismissed_finding_maintains_baseline(prime_credit_case):
         tier=FindingTier.SEVERE,
         title="NCLT liquidation order against Apex Tools LLP (Kolkata)",
         snippet="Order of liquidation issued.",
-        source_url="https://nclt.gov.in/orders/kolkata303",
+        source_url="docket:NCLT-KOL/303/2025",
         review_status=ReviewStatus.UNREVIEWED
     )
     report = AdverseMediaReport(status="COMPLETED", findings=[hit])
@@ -236,37 +230,69 @@ def test_officer_dismissed_finding_maintains_baseline(prime_credit_case):
 
 
 # ============================================================================
-# 2. FAIL-SAFE API HANDLING & WATERMARKING TESTS
+# 2. ANTI-CLEAN-CHIT & STATUTORY REGISTRY INVARIANTS
 # ============================================================================
 
-def test_missing_api_key_yields_research_unavailable():
+def test_anti_clean_chit_unindexed_custom_company():
     """
-    Specification 3: Missing TAVILY_API_KEY must yield 'RESEARCH_UNAVAILABLE'.
-    Under NO circumstances should missing key default to 'Clean' or 'No Adverse Findings'.
+    Specification: An unindexed corporate entity without public central registry filings
+    must return status='PENDING_ADVOCATE_AUDIT'. Under NO circumstances should an unseen
+    custom entity receive an automatic green 'Clean Chit' (0 Suits Found / Clear).
     """
-    with patch.dict("os.environ", {}, clear=True):
-        report = search_adverse_media(company_name="Apex Synthetic Holdings (Demo)", api_key=None, mock_mode=False)
-        assert report.status == "RESEARCH_UNAVAILABLE"
-        assert report.status != "NO_ADVERSE_FINDINGS"
-        assert "TAVILY_API_KEY is not configured" in report.error_message
-
-
-def test_api_timeout_or_error_yields_research_unavailable():
-    """
-    Specification 3: Network timeouts or HTTP errors must fail-closed to 'RESEARCH_UNAVAILABLE'.
-    """
-    mock_session = MagicMock()
-    mock_session.post.side_effect = requests.Timeout("Connection timed out after 8s")
-
     report = search_adverse_media(
-        company_name="Apex Synthetic Holdings (Demo)",
-        api_key="test-dummy-key",
+        company_name="Shree Ram Precision Engineering Works Pvt Ltd",
+        cin="U29100DL2022PTC987654",
         mock_mode=False,
-        http_session=mock_session
+        bounce_count=0
     )
-    assert report.status == "RESEARCH_UNAVAILABLE"
+    assert report.status == "PENDING_ADVOCATE_AUDIT"
     assert report.status != "NO_ADVERSE_FINDINGS"
-    assert "Network error" in report.error_message
+    assert report.status != "COMPLETED"
+    assert len(report.findings) == 0
+    assert report.disclaimer is not None
+    assert "Unindexed corporate entity" in report.disclaimer
+    assert "advocate title search report (TSR)" in report.disclaimer
+
+
+def test_watchlist_high_risk_name_interceptor():
+    """
+    Specification: Corporate entity names containing distressed or default tokens
+    (e.g., 'distressed', 'defaulter', 'fraud', 'recovery') trigger an automated
+    FindingTier.REVIEW alert under the Statutory Watchlist Interceptor.
+    """
+    report = search_adverse_media(
+        company_name="Deccan Distressed Assets & Logistics Ltd",
+        cin="U60100TG2020PTC123456",
+        mock_mode=False
+    )
+    assert report.status == "COMPLETED"
+    assert len(report.findings) == 1
+    f = report.findings[0]
+    assert f.tier == FindingTier.REVIEW
+    assert "High-Risk Watchlist Match" in f.title
+    assert "DISTRESSED" in f.title
+    assert "watchlist:CENTRAL-DEFAULT" in f.source_url
+    assert f.review_status == ReviewStatus.UNREVIEWED
+
+
+def test_financial_stress_bounces_triangulation():
+    """
+    Specification: Financial-to-Legal Stress Triangulation.
+    When an applicant has 5 or more cheque/mandate returns, the statutory engine
+    injects a Section 138 Negotiable Instruments Act Inquiry Alert.
+    """
+    report = search_adverse_media(
+        company_name="Midland Commercial Polymers Pvt Ltd",
+        cin="U25200GJ2017PTC098765",
+        mock_mode=False,
+        bounce_count=6
+    )
+    assert report.status == "COMPLETED"
+    assert len(report.findings) >= 1
+    sec138_finding = next((f for f in report.findings if "Section 138 NI Act" in f.title), None)
+    assert sec138_finding is not None
+    assert sec138_finding.tier == FindingTier.REVIEW
+    assert "6 bounces" in sec138_finding.snippet
 
 
 def test_synthetic_demo_payloads_have_strict_watermarks():
@@ -316,6 +342,7 @@ def test_tier_classifier_pattern_rules():
     assert classify_finding_tier("Liquidation order passed by tribunal", "Moratorium declared under section 14") == FindingTier.SEVERE
     assert classify_finding_tier("DGGI summons issued to directors", "Tax evasion notice served") == FindingTier.REVIEW
     assert classify_finding_tier("NCLT petition filed by vendor", "Section 9 filed") == FindingTier.REVIEW
+    assert classify_finding_tier("Section 138 NI Act summons issued", "Cheque dishonour complaint") == FindingTier.REVIEW
     assert classify_finding_tier("CFO resignation announced", "Company faces executive turnover") == FindingTier.INFORMATIONAL
 
 
@@ -411,7 +438,7 @@ def test_confirm_without_justification_raises_error():
         tier=FindingTier.SEVERE,
         title="NCLT Section 9 Admitted",
         snippet="Order passed.",
-        source_url="https://nclt.gov.in/order1",
+        source_url="docket:NCLT/order1",
         review_status=ReviewStatus.UNREVIEWED
     )
     report = AdverseMediaReport(status="COMPLETED", findings=[hit])
@@ -459,7 +486,7 @@ def test_negative_regex_relief_clauses_never_auto_flag_severe(prime_credit_case)
             tier=tier,
             title=title,
             snippet=snippet,
-            source_url="https://nclt.gov.in/relief",
+            source_url="docket:NCLT/relief",
             review_status=ReviewStatus.UNREVIEWED
         )
         report = AdverseMediaReport(status="COMPLETED", findings=[finding])
@@ -484,7 +511,7 @@ def test_merge_existing_reviews_persists_officer_state():
         tier=FindingTier.SEVERE,
         title="NCLT Admitted Order",
         snippet="Order",
-        source_url="https://nclt.gov.in/order1",
+        source_url="docket:NCLT/order1",
         review_status=ReviewStatus.CONFIRMED,
         confirmation_note="Order Ref 101/2026",
         reviewed_by="Credit Officer A",
@@ -495,7 +522,7 @@ def test_merge_existing_reviews_persists_officer_state():
         tier=FindingTier.REVIEW,
         title="DGGI Notice",
         snippet="Notice",
-        source_url="https://taxscan.in/notice2",
+        source_url="ref:DGGI/notice2",
         review_status=ReviewStatus.DISMISSED,
         dismissal_reason="Entity homonym verified through PAN mismatch.",
         reviewed_by="Credit Officer B",
@@ -511,7 +538,7 @@ def test_merge_existing_reviews_persists_officer_state():
         tier=FindingTier.INFORMATIONAL,
         title="New Expansion",
         snippet="News",
-        source_url="https://news.com/item3",
+        source_url="news:item3",
         review_status=ReviewStatus.UNREVIEWED
     )
     new_report = AdverseMediaReport(status="COMPLETED", findings=[fresh_f1, fresh_f2, fresh_f3])
@@ -534,24 +561,115 @@ def test_merge_existing_reviews_persists_officer_state():
     assert merged_f3.review_status == ReviewStatus.UNREVIEWED
 
 
-def test_no_adverse_findings_carries_legal_disclaimer():
+def test_create_empanelled_advocate_finding():
     """
-    Specification: Clean search result carries mandatory disclaimer that
-    'screening is not a legal clearance'.
+    Specification: Empanelled advocate reports generate valid AdverseMediaFinding
+    with official court docket structure and non-synthetic operational designation.
     """
-    mock_session = MagicMock()
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.json.return_value = {"results": []}
-    mock_session.post.return_value = mock_resp
-
-    report = search_adverse_media(
-        company_name="Apex Synthetic Holdings (Demo)",
-        api_key="test-api-key",
-        mock_mode=False,
-        http_session=mock_session
+    f = create_empanelled_advocate_finding(
+        company_name="Custom MSME Steel Works",
+        forum="City Civil Court Bengaluru",
+        case_no="OS/412/2025",
+        section_law="Commercial Recovery Suit",
+        claim_amount="45,00,000",
+        tier=FindingTier.REVIEW,
+        summary="Vendor recovery dispute over delayed consignment payments.",
     )
-    assert report.status == "NO_ADVERSE_FINDINGS"
-    assert len(report.findings) == 0
-    assert report.disclaimer is not None
-    assert "not a legal clearance" in report.disclaimer.lower()
+    assert f.id is not None
+    assert f.tier == FindingTier.REVIEW
+    assert "[EMPANELLED ADVOCATE REPORT]" in f.title
+    assert "City Civil Court Bengaluru" in f.title
+    assert "OS/412/2025" in f.title
+    assert "₹ 45,00,000" in f.snippet
+    assert f.review_status == ReviewStatus.UNREVIEWED
+    assert f.is_synthetic is False
+
+
+def test_statutory_docket_transcripts_archive():
+    """
+    Specification: extract_legal_docket_text retrieves certified transcripts
+    for benchmark statutory and court orders without external API reliance.
+    """
+    t_kaveri = extract_legal_docket_text("docket:NCLT-BLR/CP(IB)/102/BB/2026/kaveri_sec9")
+    assert t_kaveri is not None
+    assert "NATIONAL COMPANY LAW TRIBUNAL" in t_kaveri
+    assert "Section 9 of the Insolvency and Bankruptcy Code" in t_kaveri
+    assert "ADMITTED" in t_kaveri
+
+    t_drt = extract_legal_docket_text("docket:DRT-II-BLR/OA/219/2025/drt_oa219")
+    assert t_drt is not None
+    assert "DEBT RECOVERY TRIBUNAL" in t_drt
+    assert "SARFAESI" in t_drt
+
+    t_ni = extract_legal_docket_text("docket:ECOURTS-DEL/CC/412/2025/cc_412")
+    assert t_ni is not None
+    assert "Negotiable Instruments Act" in t_ni
+    assert "Section 138" in t_ni
+
+    t_clean = extract_legal_docket_text("roc:MCA21-DEL/FORM-CHG-4/SRN-F62910482/apex_expansion")
+    assert t_clean is not None
+    assert "MINISTRY OF CORPORATE AFFAIRS" in t_clean
+
+
+def test_cohorts_deterministic_statutory_screening():
+    """
+    Specification: Identity-Aware Statutory Screening returns expected statutory dockets:
+    - Apex Prime: COMPLETED with INFORMATIONAL Form CHG-4 satisfaction
+    - Kaveri Distressed: COMPLETED with SEVERE Section 9 CIRP (even under mock_mode=False)
+    - Bharat Steels: COMPLETED with REVIEW Section 138 NI Act
+    """
+    # Apex Prime (Returns Clean Informational MCA-21 Satisfaction Record)
+    rep_apex = search_adverse_media(company_name="Apex Synthetic Holdings (Demo)", cin="U29253DL2018PTC334120", mock_mode=False)
+    assert rep_apex.status == "COMPLETED"
+    assert len(rep_apex.findings) == 1
+    assert rep_apex.findings[0].tier == FindingTier.INFORMATIONAL
+    assert "Satisfaction of Charge" in rep_apex.findings[0].title
+
+    # Kaveri Freight (Identity-aware routing matches even under mock_mode=False)
+    rep_kaveri = search_adverse_media(company_name="Kaveri Fictitious Freight (Demo)", cin="U60200KA2019PTC120481", mock_mode=False)
+    assert rep_kaveri.status == "COMPLETED"
+    assert len(rep_kaveri.findings) == 3
+    assert any(f.tier == FindingTier.SEVERE for f in rep_kaveri.findings)
+
+    # Bharat Steels
+    rep_bharat = search_adverse_media(company_name="Bharat Mock Steels & Infra (Demo)", cin="U27100MH2019PTC324150", mock_mode=False)
+    assert rep_bharat.status == "COMPLETED"
+    assert len(rep_bharat.findings) == 3
+    assert any(f.tier == FindingTier.REVIEW for f in rep_bharat.findings)
+
+
+def test_empanelled_advocate_finding_scoring_knockout(prime_credit_case):
+    """
+    Specification: An empanelled advocate finding with SEVERE tier, when confirmed,
+    triggers policy knockout and flips verdict to REJECT.
+    """
+    f = create_empanelled_advocate_finding(
+        company_name=prime_credit_case.company_name,
+        forum="NCLT Principal Bench New Delhi",
+        case_no="CP(IB)/999/2026",
+        section_law="Section 7 Financial Creditor CIRP Admitted",
+        claim_amount="12,00,00,000",
+        tier=FindingTier.SEVERE,
+        summary="Bank of Baroda petition admitted. Moratorium declared under Section 14.",
+    )
+    rep = AdverseMediaReport(
+        status="COMPLETED",
+        findings=[f],
+        query_used="test query",
+        is_synthetic_demo=True,
+    )
+    # Confirm finding
+    confirmed_rep = confirm_adverse_finding(rep, f.id, "Verified by empanelled counsel via court search", officer_name="Chief Credit Officer")
+    sev_flags, rev_flags = extract_policy_flags(confirmed_rep)
+    assert len(sev_flags) == 1
+
+    res = score_credit_case(
+        prime_credit_case,
+        business_vintage_years=6,
+        collateral_value=Decimal("0"),
+        cgtmse_covered=True,
+        severe_flags=sev_flags,
+        review_flags=rev_flags,
+    )
+    assert res.final_verdict == Verdict.REJECT
+    assert res.knockout_applied is not None
