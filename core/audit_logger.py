@@ -1,9 +1,12 @@
 import os
 import re
 import json
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
+
+IST = ZoneInfo("Asia/Kolkata")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 OUTPUTS_DIR = BASE_DIR / "outputs"
@@ -85,7 +88,7 @@ class AuditLogger:
         prev_hash = prev_events[-1].get("event_hash", "GENESIS") if prev_events else "GENESIS"
 
         event = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "app_id": self.app_id,
             "event_type": event_type,
             "actor": actor,
