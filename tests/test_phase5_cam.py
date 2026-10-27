@@ -240,3 +240,60 @@ def test_cam_pdf_export():
     res_bad = score_credit_case(case_bad)
     with pytest.raises(CamGenerationError):
         generate_cam_pdf(case_bad, res_bad)
+
+
+def test_cam_zero_links_and_authentic_statutory_dockets():
+    """
+    Verifies that:
+    1. Generated CAM contains zero fake URLs (no example.com, no raw http:// or https:// links).
+    2. Statutory due diligence findings cite official registry references (MCA-21, NCLT, DRT, etc.).
+    3. Section 1 profile has zero duplicate attribute lines.
+    4. Executive override section does not duplicate bullets and table.
+    """
+    from core.researcher import search_adverse_media
+
+    case = create_test_credit_case()
+    score_res = score_credit_case(case)
+    rep = search_adverse_media(company_name="Apex Synthetic Holdings (Demo)", cin="U29253DL2018PTC334120", mock_mode=True)
+
+    veto = {
+        "override_active": True,
+        "override_verdict": "CONDITIONAL",
+        "officer_name": "Chief Risk Officer",
+        "justification_text": "Approved subject to additional collateral pledging.",
+        "timestamp": "2026-10-19T14:00:00Z",
+        "mitigants": ["Additional unencumbered commercial property", "Personal guarantee of promoters"]
+    }
+
+    cin_info = {
+        "cin": "U29253DL2018PTC334120",
+        "entity_code": "Private Limited Company",
+        "business_vintage_years": 8,
+        "macro_sector": "Precision Industrial Tooling",
+        "state_name": "Delhi",
+    }
+
+    cam_md = generate_cam_markdown(
+        credit_case=case,
+        score_result=score_res,
+        cin_parsed_data=cin_info,
+        adverse_media_report=rep,
+        executive_override=veto,
+        app_id="APP-ZERO-LINKS-01",
+    )
+
+    # 1. Zero fake URLs or broken links
+    assert "example.com" not in cam_md
+    assert "https://" not in cam_md
+    assert "http://" not in cam_md
+
+    # 2. Official statutory citation present
+    assert "MCA-21 RoC Delhi (Form CHG-4, SRN: F62910482)" in cam_md
+
+    # 3. No duplicate CIN or PAN in table rows
+    assert "| **Corporate Identity (CIN)** |" not in cam_md
+    assert "| **Permanent Account Number (PAN)** |" not in cam_md
+
+    # 4. De-duplicated Executive Override section
+    assert "- **Original System Verdict:**" not in cam_md
+    assert "| **Original Algorithmic Verdict** |" in cam_md
