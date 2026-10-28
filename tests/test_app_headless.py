@@ -79,3 +79,7 @@ def test_app_cohort1_end_to_end_flow():
     assert len(at.exception) == 0
     assert at.session_state.score_result is not None
     assert at.session_state.score_result.final_verdict == Verdict.APPROVE
+
+    # Switch to CAM & Audit page with active score_result and verify clean render
+    at.switch_page("app_pages/cam_audit.py").run(timeout=30)
+    assert len(at.exception) == 0, f"CAM & Audit page raised exception: {[e.message for e in at.exception]}"
