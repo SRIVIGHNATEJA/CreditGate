@@ -12,7 +12,13 @@ def reload_env():
 
 # API Keys (resolved dynamically or at import - supports both GOOGLE_API_KEY and GEMINI_API_KEY)
 GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
+if not GEMINI_API_KEY:
+    try:
+        import streamlit as st
+        if hasattr(st, "secrets"):
+            GEMINI_API_KEY = st.secrets.get("GOOGLE_API_KEY") or st.secrets.get("GEMINI_API_KEY")
+    except Exception:
+        pass
 
 # Model Configuration
 MODEL_EXTRACTION = "gemini-3.5-flash-lite"
