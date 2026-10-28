@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/Math-100%25_Python_Decimal-0F766E?style=for-the-badge" alt="Decimal Math"/>
   <img src="https://img.shields.io/badge/Audit-SHA--256_Chained-0B1F3A?style=for-the-badge" alt="SHA-256 Audit"/>
   <img src="https://img.shields.io/badge/Exports-Word_%26_PDF_CAM-15803D?style=for-the-badge" alt="Word and PDF CAM"/>
-  <img src="https://img.shields.io/badge/Pytest-62_Tests_Passing-green?style=for-the-badge&logo=pytest&logoColor=white" alt="Pytest"/>
+  <img src="https://img.shields.io/badge/Pytest-112_Tests_Passing-green?style=for-the-badge&logo=pytest&logoColor=white" alt="Pytest"/>
 </div>
 
 ---
@@ -47,7 +47,7 @@ flowchart LR
     classDef gov fill:#fef2f2,stroke:#fecaca,stroke-width:1px,color:#b91c1c;
     classDef export fill:#f0fdf4,stroke:#bbf7d0,stroke-width:1px,color:#15803d;
 
-    subgraph Stage1 ["1. Intake & Master Dossier"]
+    subgraph Stage1 ["1. Intake & Master Profile"]
         A["Borrower Profile<br/>(MCA CIN / PAN)"]:::intake --> B["Sector Taxonomy<br/>(NIC-2008 & Vintage)"]:::intake
         B --> C["Facility Calibration<br/>(Amount, Rate, Tenure)"]:::intake
     end
@@ -67,7 +67,7 @@ flowchart LR
 
     subgraph Stage4 ["4. Artifacts & Ledger"]
         K --> L["Cryptographic Audit Trail<br/>(SHA-256 Hash Chain)"]:::export
-        L --> M["Formal CAM Export<br/>(.docx & .pdf Dossiers)"]:::export
+        L --> M["Formal CAM Export<br/>(.docx & .pdf Memoranda)"]:::export
     end
 
     C -. "Sanction Terms" .-> H
@@ -184,7 +184,7 @@ Enterprise software engineering is proven when resolving silent system failures.
     </td>
     <td width="50%" align="center" style="border: none; padding: 10px;">
       <b>📑 4. Formal Word & PDF CAM Export</b><br/><br/>
-      <p align="left"><i>Generates complete Credit Appraisal Memoranda compliant with commercial banking committee standards. Exports styled Microsoft Word (.docx) and printable PDF (.pdf) dossiers with full PII masking.</i></p>
+      <p align="left"><i>Generates complete Credit Appraisal Memoranda compliant with commercial banking committee standards. Exports styled Microsoft Word (.docx) and printable PDF (.pdf) appraisal packages with full PII masking.</i></p>
     </td>
   </tr>
 </table>
@@ -223,7 +223,6 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env:
 # GOOGLE_API_KEY=your_gemini_api_key_here
-# TAVILY_API_KEY=your_tavily_api_key_here
 
 # 4. Run Automated Test Suite
 pytest -q
