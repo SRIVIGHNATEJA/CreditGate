@@ -291,7 +291,7 @@ def test_decision_programmatic_tab_navigation():
     adv_tab2 = next((b for b in at.button if b.key == "btn_adv_tab2"), None)
     assert adv_tab2 is not None
     adv_tab2.click().run(timeout=30)
-    assert at.session_state.decision_active_tab == "3. Committee Quorum & Sanction"
+    assert at.session_state.decision_active_tab == "3. Underwriting Synthesis & Sanction Routing"
 
     # Tab 3 -> Back to Tab 2
     back_tab3 = next((b for b in at.button if b.key == "btn_back_tab3"), None)
