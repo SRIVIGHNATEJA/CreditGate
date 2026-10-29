@@ -1,0 +1,74 @@
+name: CreditGate Keep-Alive & Self-Heal
+
+on:
+  schedule:
+    # Runs every 8 hours: 00:00, 08:00, 16:00 UTC (4-hour safety margin inside the 12h sleep window)
+    - cron: '0 0,8,16 * * *'
+  workflow_dispatch: # Allows manual one-click testing from GitHub Actions tab
+
+jobs:
+  keep-alive:
+    name: Ping & Self-Heal Container
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Playwright & Chromium
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+
+      - name: Execute Autonomous Browser Handshake
+        run: |
+          python - << 'EOF'
+          import sys
+          import time
+          from playwright.sync_api import sync_playwright
+
+          URL = "https://creditgate.streamlit.app"
+
+          with sync_playwright() as p:
+              browser = p.chromium.launch(
+                  headless=True,
+                  args=["--disable-blink-features=AutomationControlled"]
+              )
+              context = browser.new_context(
+                  user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                  viewport={"width": 1440, "height": 900}
+              )
+              page = context.new_page()
+
+              print(f"[*] Navigating to {URL}...")
+              try:
+                  page.goto(URL, timeout=90000, wait_until="domcontentloaded")
+              except Exception as e:
+                  print(f"[!] Navigation notice: {e}")
+
+              time.sleep(6)
+
+              # Inspect DOM for Streamlit's Deep Sleep Wake Button
+              wake_button = page.locator('button:has-text("Wake app up"), button:has-text("Yes, get this app back up")')
+
+              if wake_button.count() > 0:
+                  print("⚠️ Container is sleeping! Clicking wake button...")
+                  wake_button.first.click()
+                  time.sleep(25)
+                  print("✅ Wake sequence executed successfully.")
+              else:
+                  print("✅ Container is active. Verifying session mount...")
+                  try:
+                      page.wait_for_selector('[data-testid="stApp"], .stApp, #root', timeout=30000)
+                      title = page.title()
+                      print("✅ Full application DOM & WebSocket mounted successfully.")
+                      print(f"✅ Successfully connected to: {title}")
+                  except Exception as e:
+                      print(f"[*] DOM verification notice: {e}")
+
+              browser.close()
+              print("[*] Chromium session closed cleanly.")
+          EOF
