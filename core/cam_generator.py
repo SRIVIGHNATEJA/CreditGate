@@ -603,7 +603,10 @@ def generate_cam_markdown(
     # SECTION 4: LEGAL FORENSIC SURVEILLANCE, FIELD DUE DILIGENCE & PRE-DISBURSAL COVENANTS
     md.append("## SECTION 4: LEGAL FORENSIC SURVEILLANCE, FIELD DUE DILIGENCE & PRE-DISBURSAL COVENANTS")
     md.append("### Part A: All-India Legal & Regulatory Forensic Surveillance")
-    if adverse_media_report is None or adverse_media_report.status == "NO_ADVERSE_FINDINGS":
+    if adverse_media_report is None:
+        md.append("- **Screening Module Status:** `AWAITING_SURVEILLANCE_EXECUTION (Pending Verification)`")
+        md.append("> **Statutory Clearance Pending:** All-India litigation and insolvency registry surveillance was not executed prior to CAM generation. Under Bank Credit Policy (§7.4), facility sanction is conditional upon completing statutory registry due diligence or empanelled advocate title investigation.")
+    elif adverse_media_report.status == "NO_ADVERSE_FINDINGS":
         md.append("- **Screening Module Status:** `CLEARED (Zero Adverse Records)`")
         md.append("> **Statutory Judicial Clearance:** Zero adverse litigation, insolvency petitions, or regulatory demands identified across 672 district courts, NCLT benches, and corporate registries.")
     elif adverse_media_report.status == "RESEARCH_UNAVAILABLE":
@@ -618,7 +621,10 @@ def generate_cam_markdown(
         md.append("- **Screening Module Status:** `PENDING_ADVOCATE_AUDIT`")
         md.append("> **Statutory Clearance Pending:** Unindexed MSME entity. Under RBI commercial lending guidelines, an Empanelled Advocate Title Search Report (TSR) and Non-Encumbrance Certificate (NEC) are mandatory prior to facility disbursement.")
     elif adverse_media_report.status == "COMPLETED":
-        md.append("- **Screening Module Status:** `COMPLETED`")
+        if adverse_media_report.findings:
+            md.append("- **Screening Module Status:** `ADVERSE_FINDINGS_IDENTIFIED (Surveillance Active)`")
+        else:
+            md.append("- **Screening Module Status:** `COMPLETED (Zero Adverse Records)`")
         display_query = f'"{borrower_name}" AND "{cin_val}"' if cin_val != "UNREGISTERED_MSME" else f'"{borrower_name}"'
         md.append(f"- **Anchored Search Query:** `{display_query}`")
         if adverse_media_report.is_synthetic_demo:
@@ -1298,10 +1304,49 @@ def generate_cam_docx(
 
     _add_heading("Part A: All-India Legal & Regulatory Forensic Surveillance", level=2)
     display_query = f'"{ctx["borrower_name"]}" AND "{ctx["cin_val"]}"' if ctx["cin_val"] != "UNREGISTERED_MSME" else f'"{ctx["borrower_name"]}"'
-    _add_docx_callout(
-        "Statutory Judicial Clearance:",
-        f"Zero adverse litigation, insolvency petitions, or regulatory demands identified across 672 district courts, NCLT benches, and registries. Anchored Query: {display_query}."
-    )
+    if adverse_media_report is None:
+        _add_docx_callout(
+            "Statutory Clearance Pending (Surveillance Unexecuted):",
+            f"All-India judicial and regulatory registry sweep was not executed prior to CAM generation. Under Bank Credit Policy (§7.4), facility sanction is conditional upon completing statutory registry due diligence or empanelled advocate title search. Anchored Query: {display_query}.",
+            border_hex="F59E0B",
+            fill_hex="FFFBEB"
+        )
+    elif adverse_media_report.status == "PENDING_ADVOCATE_AUDIT":
+        _add_docx_callout(
+            "Statutory Clearance Pending (Advocate Audit Mandatory):",
+            f"Unindexed MSME entity. Under RBI commercial lending guidelines, an Empanelled Advocate Title Search Report (TSR) and Non-Encumbrance Certificate (NEC) are mandatory prior to facility disbursement. Anchored Query: {display_query}.",
+            border_hex="D97706",
+            fill_hex="FFFBEB"
+        )
+    elif adverse_media_report.status == "RESEARCH_UNAVAILABLE" and not adverse_media_report.is_synthetic_demo:
+        _add_docx_callout(
+            "Research Unavailable Notice:",
+            f"External secondary research could not be completed. Credit Officer must conduct independent MCA registry and court docket due diligence prior to sanction. Anchored Query: {display_query}.",
+            border_hex="64748B",
+            fill_hex="F8FAFC"
+        )
+    elif adverse_media_report.findings:
+        _add_docx_callout(
+            "Statutory Judicial Flag (Adverse Findings Identified):",
+            f"{len(adverse_media_report.findings)} adverse litigation / insolvency record(s) identified across NCLT/DRT/District Courts. Material credit risk identified. Anchored Query: {display_query}.",
+            border_hex="DC2626",
+            fill_hex="FEF2F2"
+        )
+        legal_headers = ["Litigation / Statutory Record", "Severity Tier", "Statutory Authority / Docket", "Adjudication Status"]
+        legal_rows = []
+        for f in adverse_media_report.findings:
+            st_disp, _ = resolve_finding_status_and_notes(f)
+            d_ref = format_statutory_docket_ref(f.source_url, f.title)
+            c_title = f.title.replace("[SYNTHETIC DEMO DATA]", "").replace("[Unverified Media Mention]", "").strip()
+            legal_rows.append([c_title, str(f.tier.value), d_ref, st_disp])
+        _add_docx_table(legal_headers, legal_rows, [2.5, 1.2, 2.0, 1.3])
+    else:
+        _add_docx_callout(
+            "Statutory Judicial Clearance:",
+            f"Zero adverse litigation, insolvency petitions, or regulatory demands identified across 672 district courts, NCLT benches, and registries. Anchored Query: {display_query}.",
+            border_hex="10B981",
+            fill_hex="F0FDF4"
+        )
 
     _add_heading("Part B: Field Due Diligence & Qualitative Underwriting Verification", level=2)
     dd_headers = ["Due Diligence Area", "Verification Standard", "Underwriting Finding & Officer Attestation", "Policy Status"]
@@ -1715,10 +1760,49 @@ def generate_cam_pdf(
     story.append(Paragraph("<b>SECTION 4: LEGAL FORENSIC SURVEILLANCE, FIELD DUE DILIGENCE &amp; PRE-DISBURSAL COVENANTS</b>", h1_style))
     story.append(Paragraph("<b>Part A: All-India Legal &amp; Regulatory Forensic Surveillance</b>", h2_style))
     display_query = f'"{ctx["borrower_name"]}" AND "{ctx["cin_val"]}"' if ctx["cin_val"] != "UNREGISTERED_MSME" else f'"{ctx["borrower_name"]}"'
-    story.append(_build_pdf_callout(
-        "Statutory Judicial Clearance:",
-        f"Zero adverse litigation, insolvency petitions, or regulatory demands identified across 672 district courts, NCLT benches, and registries. Anchored Query: {display_query}."
-    ))
+    if adverse_media_report is None:
+        story.append(_build_pdf_callout(
+            "Statutory Clearance Pending (Surveillance Unexecuted):",
+            f"All-India judicial and regulatory registry sweep was not executed prior to CAM generation. Under Bank Credit Policy (§7.4), facility sanction is conditional upon completing statutory registry due diligence or empanelled advocate title search. Anchored Query: {display_query}.",
+            border_color="#F59E0B",
+            bg_color="#FFFBEB"
+        ))
+    elif adverse_media_report.status == "PENDING_ADVOCATE_AUDIT":
+        story.append(_build_pdf_callout(
+            "Statutory Clearance Pending (Advocate Audit Mandatory):",
+            f"Unindexed MSME entity. Under RBI commercial lending guidelines, an Empanelled Advocate Title Search Report (TSR) and Non-Encumbrance Certificate (NEC) are mandatory prior to facility disbursement. Anchored Query: {display_query}.",
+            border_color="#D97706",
+            bg_color="#FFFBEB"
+        ))
+    elif adverse_media_report.status == "RESEARCH_UNAVAILABLE" and not adverse_media_report.is_synthetic_demo:
+        story.append(_build_pdf_callout(
+            "Research Unavailable Notice:",
+            f"External secondary research could not be completed. Credit Officer must conduct independent MCA registry and court docket due diligence prior to sanction. Anchored Query: {display_query}.",
+            border_color="#64748B",
+            bg_color="#F8FAFC"
+        ))
+    elif adverse_media_report.findings:
+        story.append(_build_pdf_callout(
+            "Statutory Judicial Flag (Adverse Findings Identified):",
+            f"{len(adverse_media_report.findings)} adverse litigation / insolvency record(s) identified across NCLT/DRT/District Courts. Material credit risk identified. Anchored Query: {display_query}.",
+            border_color="#DC2626",
+            bg_color="#FEF2F2"
+        ))
+        story.append(Spacer(1, 2))
+        legal_rows = [["Litigation / Statutory Record", "Severity Tier", "Authority / Docket", "Adjudication Status"]]
+        for f in adverse_media_report.findings:
+            st_disp, _ = resolve_finding_status_and_notes(f)
+            d_ref = format_statutory_docket_ref(f.source_url, f.title)
+            c_title = f.title.replace("[SYNTHETIC DEMO DATA]", "").replace("[Unverified Media Mention]", "").strip()
+            legal_rows.append([c_title, str(f.tier.value), d_ref, st_disp])
+        story.append(_make_pdf_table(legal_rows, [160, 80, 160, 110]))
+    else:
+        story.append(_build_pdf_callout(
+            "Statutory Judicial Clearance:",
+            f"Zero adverse litigation, insolvency petitions, or regulatory demands identified across 672 district courts, NCLT benches, and registries. Anchored Query: {display_query}.",
+            border_color="#10B981",
+            bg_color="#F0FDF4"
+        ))
     story.append(Spacer(1, 3))
 
     story.append(Paragraph("<b>Part B: Field Due Diligence &amp; Qualitative Underwriting Verification</b>", h2_style))

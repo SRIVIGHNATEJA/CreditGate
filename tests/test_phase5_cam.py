@@ -297,3 +297,52 @@ def test_cam_zero_links_and_authentic_statutory_dockets():
     # 4. De-duplicated Executive Override section
     assert "- **Original System Verdict:**" not in cam_md
     assert "| **Original Algorithmic Verdict** |" in cam_md
+
+
+def test_cam_section4_surveillance_unexecuted_vs_findings():
+    """
+    Verifies Section 4 Part A handling:
+    1. If adverse_media_report is None, status is AWAITING_SURVEILLANCE_EXECUTION (anti-false-clean-chit).
+    2. If adverse findings are present, status is ADVERSE_FINDINGS_IDENTIFIED.
+    3. DOCX and PDF export with findings render cleanly without throwing exceptions.
+    """
+    from core.researcher import search_adverse_media
+
+    case = create_test_credit_case()
+    score_res = score_credit_case(case)
+
+    # 1. Unexecuted surveillance (report is None) -> Must NOT give clean chit!
+    cam_unexecuted = generate_cam_markdown(
+        credit_case=case,
+        score_result=score_res,
+        adverse_media_report=None,
+        app_id="APP-UNEXEC-01"
+    )
+    assert "AWAITING_SURVEILLANCE_EXECUTION" in cam_unexecuted
+    assert "Statutory Clearance Pending" in cam_unexecuted
+    assert "CLEARED (Zero Adverse Records)" not in cam_unexecuted
+
+    # Verify DOCX and PDF unexecuted generate valid bytes
+    docx_unexec = generate_cam_docx(credit_case=case, score_result=score_res, adverse_media_report=None)
+    assert isinstance(docx_unexec, bytes) and len(docx_unexec) > 1000
+
+    pdf_unexec = generate_cam_pdf(credit_case=case, score_result=score_res, adverse_media_report=None)
+    assert isinstance(pdf_unexec, bytes) and len(pdf_unexec) > 1000
+
+    # 2. Distressed entity with adverse findings (Kaveri benchmark)
+    kaveri_rep = search_adverse_media(company_name="Kaveri Fictitious Freight (Demo)", cin="U60200KA2019PTC120481")
+    cam_findings = generate_cam_markdown(
+        credit_case=case,
+        score_result=score_res,
+        adverse_media_report=kaveri_rep,
+        app_id="APP-FINDINGS-01"
+    )
+    assert "ADVERSE_FINDINGS_IDENTIFIED" in cam_findings
+    assert "NCLT Bengaluru Bench" in cam_findings or "CP(IB)/102/BB/2026" in cam_findings
+
+    # Verify DOCX and PDF with adverse findings generate valid bytes
+    docx_findings = generate_cam_docx(credit_case=case, score_result=score_res, adverse_media_report=kaveri_rep)
+    assert isinstance(docx_findings, bytes) and len(docx_findings) > 1000
+
+    pdf_findings = generate_cam_pdf(credit_case=case, score_result=score_res, adverse_media_report=kaveri_rep)
+    assert isinstance(pdf_findings, bytes) and len(pdf_findings) > 1000
