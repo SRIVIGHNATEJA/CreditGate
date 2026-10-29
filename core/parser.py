@@ -5,7 +5,7 @@ import json
 import logging
 from decimal import Decimal
 from typing import Optional, Dict, Any, List, Tuple
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
 from pydantic import BaseModel, Field
 
@@ -22,6 +22,9 @@ from core.data_models import (
 
 logger = logging.getLogger("creditgate.parser")
 logging.basicConfig(level=logging.INFO)
+
+# Persistent module-level executor to enforce application SLA without blocking on context-manager exit
+_GEMINI_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="gemini_sla_worker")
 
 # ============================================================================
 # 1. PYMUPDF SLICING & HEURISTIC ANCHOR DETECTION
@@ -461,8 +464,8 @@ def _call_gemini_vision(pdf_bytes: bytes, system_prompt: str, schema_cls: Any, a
     """
     Calls Gemini API passing sanitized inline bytes directly without temporary disk files.
     Enforces structured JSON output conforming to the specified clean Pydantic schema.
-    Includes transient 429 (rate-limit) and 503 exponential backoff retry.
-    Falls back gracefully to deterministic extraction if API key is unset or network fails.
+    Guarantees strict 6.0s internal SLA cut-off via persistent module worker pool.
+    Falls back gracefully to deterministic extraction if API key is unset, network fails, or SLA is exceeded.
     """
     if os.getenv("PYTEST_CURRENT_TEST") and not api_key:
         return None
@@ -472,15 +475,12 @@ def _call_gemini_vision(pdf_bytes: bytes, system_prompt: str, schema_cls: Any, a
         logger.info("GEMINI_API_KEY not configured. Engaging deterministic fallback parser.")
         return None
 
-    try:
+    def _execute_api_call():
         from google import genai
         from google.genai import types
 
-        # Strict 6.0-second socket read timeout to prevent upstream cloud gateway hangs
-        client = genai.Client(
-            api_key=key_to_use,
-            http_options=types.HttpOptions(timeout=6000),
-        )
+        # Standard client initialization without illegal <10s RPC deadline headers
+        client = genai.Client(api_key=key_to_use)
         pdf_part = types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")
 
         config = types.GenerateContentConfig(
@@ -494,17 +494,23 @@ def _call_gemini_vision(pdf_bytes: bytes, system_prompt: str, schema_cls: Any, a
         response = client.models.generate_content(
             model=MODEL_EXTRACTION,
             contents=[pdf_part, "Extract the required structured financial fields from this document."],
-            config=config
+            config=config,
         )
 
         if response.text:
             parsed_json = json.loads(response.text)
-            inst = schema_cls(**parsed_json)
-            return inst
+            return schema_cls(**parsed_json)
         return None
 
+    # Submit to persistent module-level pool without a blocking context-manager exit
+    fut = _GEMINI_EXECUTOR.submit(_execute_api_call)
+    try:
+        return fut.result(timeout=6.0)
+    except TimeoutError:
+        logger.warning("Gemini API call exceeded 6.0s internal SLA limit. Circuit breaker engaged; activating 5ms deterministic parser.")
+        return None
     except Exception as e:
-        logger.warning(f"Gemini API call interrupted or exceeded 6s limit: {e}. Circuit breaker engaged; activating 5ms deterministic parser.")
+        logger.warning(f"Gemini API call failed ({e}). Circuit breaker engaged; activating 5ms deterministic parser.")
         return None
 
 
