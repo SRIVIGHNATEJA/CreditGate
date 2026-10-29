@@ -30,7 +30,6 @@ from core.policy import Verdict, derive_stipulated_covenants
 from core.scorer import score_credit_case, ScoreResult
 from core.formatting import format_inr
 from core.analyser import calculate_monthly_emi
-from core.config import GEMINI_API_KEY, MODEL_RESEARCH
 import importlib
 try:
     from ui.state import (

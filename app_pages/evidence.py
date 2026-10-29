@@ -19,6 +19,7 @@ from core.data_models import (
     GSTExtraction,
     ITRExtraction,
 )
+from core.config import get_gemini_api_key
 from core.parser import extract_all_documents, extract_entity_identifiers
 from core.onboarding import generate_application_id
 from core.formatting import format_inr
@@ -666,9 +667,7 @@ else:
         with st.status("Extracting and verifying documents...", expanded=True) as status:
             t_start = time.perf_counter()
             try:
-                active_gemini_key = (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")) if use_gemini else None
-                if active_gemini_key == "your_gemini_api_key_here":
-                    active_gemini_key = None
+                active_gemini_key = get_gemini_api_key() if use_gemini else None
                 if cohort_selection == "None (Manual Upload)":
                     ident = st.session_state.get("custom_extracted_identifiers")
                     if not ident:

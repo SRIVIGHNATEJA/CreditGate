@@ -23,6 +23,7 @@ from core.onboarding import (
 from core.analyser import calculate_monthly_emi
 from core.formatting import format_inr
 from core.audit_logger import AuditLogger, verify_chain
+from core.config import get_gemini_api_key
 from core.policy import Verdict
 from ui.components import render_kpi_card, render_callout, status_pill, _render_html, _clean_html
 
@@ -453,10 +454,7 @@ def render_sidebar() -> Dict[str, Any]:
             </div>"""
 
         # 3. Gateway Health (State-Derived Vision AI & Legal Radar)
-        has_gemini = bool(
-            (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"))
-            and (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")) != "your_gemini_api_key_here"
-        )
+        has_gemini = bool(get_gemini_api_key())
         ext_meta = st.session_state.get("extraction_meta")
         has_active_extraction = bool(st.session_state.get("extracted_case") is not None)
         if ext_meta and isinstance(ext_meta, dict) and "engine" in ext_meta and has_active_extraction:

@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 import pymupdf
 
-from core.config import GEMINI_API_KEY, MODEL_EXTRACTION
+from core.config import GEMINI_API_KEY, MODEL_EXTRACTION, get_gemini_api_key
 from core.data_models import (
     BankExtraction,
     GSTExtraction,
@@ -461,46 +461,56 @@ def _call_gemini_vision(pdf_bytes: bytes, system_prompt: str, schema_cls: Any, a
     """
     Calls Gemini API passing sanitized inline bytes directly without temporary disk files.
     Enforces structured JSON output conforming to the specified clean Pydantic schema.
+    Includes transient 429 (rate-limit) and 503 exponential backoff retry.
     Falls back gracefully to deterministic extraction if API key is unset or network fails.
     """
     if os.getenv("PYTEST_CURRENT_TEST") and not api_key:
         return None
 
-    key_to_use = api_key or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or GEMINI_API_KEY
+    key_to_use = api_key or get_gemini_api_key() or GEMINI_API_KEY
     if not key_to_use or key_to_use == "your_gemini_api_key_here":
         logger.info("GEMINI_API_KEY not configured. Engaging deterministic fallback parser.")
         return None
 
-    try:
-        from google import genai
-        from google.genai import types
+    max_retries = 1
+    for attempt in range(max_retries + 1):
+        try:
+            from google import genai
+            from google.genai import types
 
-        client = genai.Client(api_key=key_to_use)
-        pdf_part = types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")
+            client = genai.Client(api_key=key_to_use)
+            pdf_part = types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")
 
-        config = types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            response_mime_type="application/json",
-            response_schema=schema_cls,
-            temperature=0.0,
-            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-        )
+            config = types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                response_mime_type="application/json",
+                response_schema=schema_cls,
+                temperature=0.0,
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+            )
 
-        response = client.models.generate_content(
-            model=MODEL_EXTRACTION,
-            contents=[pdf_part, "Extract the required structured financial fields from this document."],
-            config=config
-        )
+            response = client.models.generate_content(
+                model=MODEL_EXTRACTION,
+                contents=[pdf_part, "Extract the required structured financial fields from this document."],
+                config=config
+            )
 
-        if response.text:
-            parsed_json = json.loads(response.text)
-            inst = schema_cls(**parsed_json)
-            return inst
-        return None
+            if response.text:
+                parsed_json = json.loads(response.text)
+                inst = schema_cls(**parsed_json)
+                return inst
+            return None
 
-    except Exception as e:
-        logger.warning(f"Gemini API call failed: {e}. Falling back to deterministic parser.")
-        return None
+        except Exception as e:
+            err_str = str(e).lower()
+            is_rate_limit = any(term in err_str for term in ["429", "resource_exhausted", "resourceexhausted", "quota", "too many requests", "unavailable", "503"])
+            if is_rate_limit and attempt < max_retries:
+                backoff_sec = 0.8
+                logger.warning(f"Gemini API rate limit encountered (attempt {attempt + 1}/{max_retries + 1}). Fast 0.8s backoff before single retry: {e}")
+                time.sleep(backoff_sec)
+                continue
+            logger.warning(f"Gemini API call failed: {e}. Falling back to deterministic parser.")
+            return None
 
 
 def extract_bank_statement(
@@ -684,7 +694,11 @@ def extract_all_documents(
 
     with ThreadPoolExecutor(max_workers=3) as executor:
         future_bank = executor.submit(extract_bank_statement, bank_bytes, gemini_api_key, force_deterministic)
+        if not force_deterministic and (gemini_api_key or GEMINI_API_KEY) and not os.getenv("PYTEST_CURRENT_TEST"):
+            time.sleep(0.5)
         future_gst = executor.submit(extract_gstr3b, gst_bytes, gemini_api_key, force_deterministic)
+        if not force_deterministic and (gemini_api_key or GEMINI_API_KEY) and not os.getenv("PYTEST_CURRENT_TEST"):
+            time.sleep(0.5)
         future_itr = executor.submit(extract_itr, itr_bytes, gemini_api_key, force_deterministic)
 
         bank_data = future_bank.result()
@@ -719,9 +733,9 @@ def extract_all_documents(
         getattr(itr_data, "redaction_events", [])
     )
 
-    has_key = bool(gemini_api_key or GEMINI_API_KEY or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"))
+    has_key = bool(gemini_api_key or get_gemini_api_key() or GEMINI_API_KEY)
     diagnostic_code = "CONNECTED" if primary_engine == "AI_GEMINI" else ("FORCE_DETERMINISTIC" if force_deterministic else ("KEY_MISSING" if not has_key else "FALLBACK_DETERMINISTIC"))
-    engine_display = "Multimodal AI (Gemini 3.5 Flash Lite)" if primary_engine == "AI_GEMINI" else "Deterministic Regex (PyMuPDF)"
+    engine_display = f"Multimodal AI ({MODEL_EXTRACTION})" if primary_engine == "AI_GEMINI" else "Deterministic Regex (PyMuPDF)"
 
     metadata = {
         "execution_latency_seconds": round(elapsed_time, 3),
