@@ -472,45 +472,40 @@ def _call_gemini_vision(pdf_bytes: bytes, system_prompt: str, schema_cls: Any, a
         logger.info("GEMINI_API_KEY not configured. Engaging deterministic fallback parser.")
         return None
 
-    max_retries = 1
-    for attempt in range(max_retries + 1):
-        try:
-            from google import genai
-            from google.genai import types
+    try:
+        from google import genai
+        from google.genai import types
 
-            client = genai.Client(api_key=key_to_use)
-            pdf_part = types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")
+        # Strict 6.0-second socket read timeout to prevent upstream cloud gateway hangs
+        client = genai.Client(
+            api_key=key_to_use,
+            http_options=types.HttpOptions(timeout=6000),
+        )
+        pdf_part = types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")
 
-            config = types.GenerateContentConfig(
-                system_instruction=system_prompt,
-                response_mime_type="application/json",
-                response_schema=schema_cls,
-                temperature=0.0,
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-            )
+        config = types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            response_mime_type="application/json",
+            response_schema=schema_cls,
+            temperature=0.0,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+        )
 
-            response = client.models.generate_content(
-                model=MODEL_EXTRACTION,
-                contents=[pdf_part, "Extract the required structured financial fields from this document."],
-                config=config
-            )
+        response = client.models.generate_content(
+            model=MODEL_EXTRACTION,
+            contents=[pdf_part, "Extract the required structured financial fields from this document."],
+            config=config
+        )
 
-            if response.text:
-                parsed_json = json.loads(response.text)
-                inst = schema_cls(**parsed_json)
-                return inst
-            return None
+        if response.text:
+            parsed_json = json.loads(response.text)
+            inst = schema_cls(**parsed_json)
+            return inst
+        return None
 
-        except Exception as e:
-            err_str = str(e).lower()
-            is_rate_limit = any(term in err_str for term in ["429", "resource_exhausted", "resourceexhausted", "quota", "too many requests", "unavailable", "503"])
-            if is_rate_limit and attempt < max_retries:
-                backoff_sec = 0.8
-                logger.warning(f"Gemini API rate limit encountered (attempt {attempt + 1}/{max_retries + 1}). Fast 0.8s backoff before single retry: {e}")
-                time.sleep(backoff_sec)
-                continue
-            logger.warning(f"Gemini API call failed: {e}. Falling back to deterministic parser.")
-            return None
+    except Exception as e:
+        logger.warning(f"Gemini API call interrupted or exceeded 6s limit: {e}. Circuit breaker engaged; activating 5ms deterministic parser.")
+        return None
 
 
 def extract_bank_statement(
@@ -693,17 +688,20 @@ def extract_all_documents(
     start_time = time.perf_counter()
 
     with ThreadPoolExecutor(max_workers=3) as executor:
+        # 1. Heaviest: Bank Statement (2-3 page transaction ledger, balance & bounce scanning)
         future_bank = executor.submit(extract_bank_statement, bank_bytes, gemini_api_key, force_deterministic)
         if not force_deterministic and (gemini_api_key or GEMINI_API_KEY) and not os.getenv("PYTEST_CURRENT_TEST"):
             time.sleep(0.5)
-        future_gst = executor.submit(extract_gstr3b, gst_bytes, gemini_api_key, force_deterministic)
+        # 2. Medium: ITR Corporate Return (7 balance sheet schedules & income ratios)
+        future_itr = executor.submit(extract_itr, itr_bytes, gemini_api_key, force_deterministic)
         if not force_deterministic and (gemini_api_key or GEMINI_API_KEY) and not os.getenv("PYTEST_CURRENT_TEST"):
             time.sleep(0.5)
-        future_itr = executor.submit(extract_itr, itr_bytes, gemini_api_key, force_deterministic)
+        # 3. Lightest: GSTR-3B Summary Return (1 page, 2 summary metrics)
+        future_gst = executor.submit(extract_gstr3b, gst_bytes, gemini_api_key, force_deterministic)
 
         bank_data = future_bank.result()
-        gst_data = future_gst.result()
         itr_data = future_itr.result()
+        gst_data = future_gst.result()
 
     elapsed_time = time.perf_counter() - start_time
     is_reconciled, diff = verify_bank_reconciliation(bank_data)

@@ -2412,6 +2412,10 @@ SHA-256 Ledger Verified
                         st.session_state._last_analyzed_field_note = txt_val
                         st.session_state.sb_fn_pillar = pillar_options[p_idx]
 
+                    # Ensure key is initialized cleanly in session state without index conflicts
+                    if "sb_fn_pillar" not in st.session_state:
+                        st.session_state["sb_fn_pillar"] = "GENERAL"
+
                     if note_len == 0:
                         # 1. Standby State (Empty)
                         st.markdown(
@@ -2425,7 +2429,6 @@ SHA-256 Ledger Verified
                             fn_pillar = st.selectbox(
                                 "Affected C Pillar (Auto-Assigned on Input • Selectable)",
                                 pillar_options,
-                                index=5,
                                 format_func=lambda x: pillar_labels.get(x, x),
                                 key="sb_fn_pillar",
                                 disabled=True,
@@ -2455,7 +2458,6 @@ SHA-256 Ledger Verified
                             fn_pillar = st.selectbox(
                                 "Affected C Pillar (Auto-Assigned on Input • Selectable)",
                                 pillar_options,
-                                index=5,
                                 format_func=lambda x: pillar_labels.get(x, x),
                                 key="sb_fn_pillar",
                                 disabled=True,
@@ -2489,12 +2491,9 @@ SHA-256 Ledger Verified
 
                         col_fn1, col_fn2 = st.columns([3, 2], vertical_alignment="bottom")
                         with col_fn1:
-                            current_sel = st.session_state.get("sb_fn_pillar", pillar_options[p_idx])
-                            cur_idx = pillar_options.index(current_sel) if current_sel in pillar_options else p_idx
                             fn_pillar = st.selectbox(
                                 "Affected C Pillar (Auto-Assigned • Select to Override)",
                                 pillar_options,
-                                index=cur_idx,
                                 format_func=lambda x: pillar_labels.get(x, x),
                                 key="sb_fn_pillar",
                                 help="Automatically selected based on note keywords. You can change this dropdown to manually override.",
