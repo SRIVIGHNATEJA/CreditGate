@@ -10,7 +10,7 @@ st.set_page_config(
     page_title="CreditGate | AI Underwriting Copilot",
     page_icon=":material/shield:",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="auto",
 )
 
 st.markdown("""
@@ -222,6 +222,107 @@ st.markdown("""
         border-color: #0F766E !important;
         color: #0F766E !important;
     }
+
+    /* -------------------------------------------------------------
+       RESPONSIVE VIEWPORT & MOBILE ORIENTATION ADVISORY SYSTEM
+       ------------------------------------------------------------- */
+    
+    /* Base Mobile Advisory Banner Styling (Hidden on Desktop by default) */
+    .mobile-orientation-banner {
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+        background: #0B1F3A;
+        border: 1px solid #0F766E;
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin-bottom: 14px;
+        color: #F8FAFC;
+        font-size: 0.82rem;
+        line-height: 1.35;
+        box-shadow: 0 4px 12px rgba(11, 31, 58, 0.25);
+    }
+    .mobile-orientation-banner .rotate-icon {
+        display: inline-block;
+        font-size: 1.3rem;
+        animation: rotate-hint 3s ease-in-out infinite;
+    }
+    .mobile-orientation-banner .dismiss-btn {
+        cursor: pointer;
+        padding: 4px 8px;
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #94A3B8;
+        border-radius: 4px;
+        user-select: none;
+        -webkit-user-select: none;
+        line-height: 1;
+        transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out;
+    }
+    .mobile-orientation-banner .dismiss-btn:hover {
+        color: #FFFFFF;
+        background-color: rgba(255, 255, 255, 0.1);
+    }
+    @keyframes rotate-hint {
+        0%, 100% { transform: rotate(0deg); }
+        35%, 65% { transform: rotate(-90deg); }
+    }
+
+    /* 1. PORTRAIT MOBILE (< 768px & Portrait): Show Advisory & Restrict Sidebar */
+    @media screen and (max-width: 768px) and (orientation: portrait) {
+        .mobile-orientation-banner {
+            display: flex !important;
+        }
+        /* Pure CSS Checkbox Dismissal Hack (Higher cascade priority) */
+        #dismiss-orientation-check:checked + .mobile-orientation-banner {
+            display: none !important;
+        }
+        /* Prevent sidebar from occupying 90% of screen */
+        section[data-testid="stSidebar"] {
+            min-width: 250px !important;
+            max-width: 85vw !important;
+        }
+        .block-container {
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+            padding-top: 1rem !important;
+        }
+    }
+
+    /* 2. LANDSCAPE MOBILE (Landscape & height <= 520px): Maximize Vertical Real Estate */
+    @media screen and (orientation: landscape) and (max-height: 520px) {
+        .mobile-orientation-banner {
+            display: none !important;
+        }
+        /* Preserve sidebar collapsed hamburger button while minimizing vertical footprint */
+        header[data-testid="stHeader"] {
+            background: transparent !important;
+            height: 1.5rem !important;
+        }
+        .block-container {
+            padding-top: 0.5rem !important;
+            padding-bottom: 1.5rem !important;
+            padding-left: 1.25rem !important;
+            padding-right: 1.25rem !important;
+        }
+        /* Keep sidebar compact in landscape */
+        section[data-testid="stSidebar"] {
+            min-width: 260px !important;
+            max-width: 320px !important;
+        }
+    }
+
+    /* 3. DESKTOP & LAPTOPS (> 768px or height > 520px): Hide Banner */
+    @media screen and (min-width: 769px) and (min-height: 521px) {
+        .mobile-orientation-banner {
+            display: none !important;
+        }
+    }
+
+    /* Native touch momentum scrolling for financial tables */
+    [data-testid="stDataFrame"], [data-testid="stTable"] {
+        -webkit-overflow-scrolling: touch;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -243,6 +344,20 @@ pages = [
     st.Page("app_pages/cam_audit.py", title="CAM & Audit", icon=":material/description:"),
 ]
 pg = st.navigation(pages)
+
+st.markdown("""
+<input type="checkbox" id="dismiss-orientation-check" style="display: none;">
+<div class="mobile-orientation-banner">
+    <div style="display: flex; align-items: center; gap: 10px;">
+        <span class="rotate-icon">📱</span>
+        <div>
+            <strong style="color: #F8FAFC;">Institutional Underwriting Terminal</strong><br>
+            <span style="color: #94A3B8;">Rotate device to <strong>Landscape</strong> for optimal multi-column cockpit view.</span>
+        </div>
+    </div>
+    <label for="dismiss-orientation-check" class="dismiss-btn" title="Dismiss">✕</label>
+</div>
+""", unsafe_allow_html=True)
 
 st.markdown('<div class="main-title">CreditGate: AI MSME Underwriting Copilot</div>', unsafe_allow_html=True)
 # Standard 4-page navigation pipeline synchronized with current router destination:
