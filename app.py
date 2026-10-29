@@ -157,7 +157,6 @@ st.markdown("""
 
     /* Institutional Sidebar Ribbon Aesthetics */
     section[data-testid="stSidebar"] {
-        min-width: 335px !important;
         background: linear-gradient(180deg, #F8FAFC 0%, #F1F5F9 100%) !important;
         border-right: 1px solid #CBD5E1 !important;
         box-shadow: 2px 0 16px rgba(15, 23, 42, 0.05) !important;
@@ -268,7 +267,7 @@ st.markdown("""
         35%, 65% { transform: rotate(-90deg); }
     }
 
-    /* 1. PORTRAIT MOBILE (< 768px & Portrait): Show Advisory & Restrict Sidebar */
+    /* 1. PORTRAIT MOBILE (< 768px & Portrait): Show Advisory */
     @media screen and (max-width: 768px) and (orientation: portrait) {
         .mobile-orientation-banner {
             display: flex !important;
@@ -277,9 +276,8 @@ st.markdown("""
         #dismiss-orientation-check:checked + .mobile-orientation-banner {
             display: none !important;
         }
-        /* Prevent sidebar from occupying 90% of screen */
-        section[data-testid="stSidebar"] {
-            min-width: 250px !important;
+        /* Restrict expanded sidebar content from exceeding 85% of screen width */
+        div[data-testid="stSidebarContent"] {
             max-width: 85vw !important;
         }
         .block-container {
@@ -289,7 +287,7 @@ st.markdown("""
         }
     }
 
-    /* 2. LANDSCAPE MOBILE (Landscape & height <= 520px): Maximize Vertical Real Estate */
+    /* 2. LANDSCAPE MOBILE (Landscape & height <= 520px): Maximize Vertical & Horizontal Real Estate */
     @media screen and (orientation: landscape) and (max-height: 520px) {
         .mobile-orientation-banner {
             display: none !important;
@@ -302,13 +300,8 @@ st.markdown("""
         .block-container {
             padding-top: 0.5rem !important;
             padding-bottom: 1.5rem !important;
-            padding-left: 1.25rem !important;
-            padding-right: 1.25rem !important;
-        }
-        /* Keep sidebar compact in landscape */
-        section[data-testid="stSidebar"] {
-            min-width: 260px !important;
-            max-width: 320px !important;
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
         }
     }
 
