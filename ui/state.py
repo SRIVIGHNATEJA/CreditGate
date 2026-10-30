@@ -247,6 +247,10 @@ def init_session_state():
         st.session_state.sb_pan_input = "AAACA1234B"
     if "active_pan_mismatch" not in st.session_state:
         st.session_state.active_pan_mismatch = False
+    if "case_cin_input" not in st.session_state:
+        st.session_state.case_cin_input = st.session_state.get("active_cin_selection", "U29253DL2018PTC334120")
+    if "case_pan_input" not in st.session_state:
+        st.session_state.case_pan_input = st.session_state.get("active_pan_input", "AAACA1234B")
 
     # Facility defaults (B2: plain session_state keys)
     if "facility_loan_amount" not in st.session_state:

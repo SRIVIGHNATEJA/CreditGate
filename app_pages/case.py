@@ -263,7 +263,7 @@ with col_borrower:
             )
             hdr_chip = f" &nbsp; {status_pill('Extracted', variant='approve')}" if (active_cohort == "None (Manual Upload)" and has_custom_files) else ""
             st.markdown(f"#### :material/domain: Borrower Master Profile (MCA-21){hdr_chip}", unsafe_allow_html=True)
-            is_corp = st.toggle("Registered Corporate? (MCA CIN)", value=True, key="case_is_corporate")
+            is_corp = st.toggle("Registered Corporate? (MCA CIN)", key="case_is_corporate")
 
             if is_corp != is_corporate:
                 st.session_state.active_is_corporate = is_corp
@@ -304,10 +304,11 @@ with col_borrower:
             if active_cohort == "None (Manual Upload)" and is_bharat_c3 and not cin_raw_default:
                 cin_raw_default = "U24101MH2020PTC349120"
                 st.session_state.active_cin_selection = "U24101MH2020PTC349120"
+                st.session_state.case_cin_input = "U24101MH2020PTC349120"
                 ctx = get_app_context()
                 cin_parsed_data = ctx.get("cin_parsed_data")
 
-            cin_val = st.text_input("Corporate ID Number (CIN)", value=cin_raw_default, placeholder="e.g. U24101MH2020PTC349120 (21 Characters)", key="case_cin_input")
+            cin_val = st.text_input("Corporate ID Number (CIN)", placeholder="e.g. U24101MH2020PTC349120 (21 Characters)", key="case_cin_input")
             effective_cin = cin_val.strip().upper() if cin_val.strip() else "UNREGISTERED_MSME"
             if effective_cin != ctx["cin_input"].strip().upper():
                 st.session_state.active_cin_selection = effective_cin
@@ -358,7 +359,7 @@ with col_borrower:
                 if cin_parsed_data.get("low_vintage_risk_flag"):
                     render_callout("Business vintage < 3 years indicates elevated early-stage default risk.", title="Vintage Warning", variant="warning", padding="6px 12px", margin="4px 0 8px 0")
 
-            pan_val = st.text_input("Permanent Account Number (PAN)", value=ctx["pan_input"], key="case_pan_input")
+            pan_val = st.text_input("Permanent Account Number (PAN)", key="case_pan_input")
             if pan_val.strip().upper() != ctx["pan_input"].strip().upper():
                 st.session_state.active_pan_input = pan_val.strip().upper()
                 st.session_state.extracted_case = None
@@ -436,7 +437,7 @@ with col_borrower:
             )
             hdr_chip = f" &nbsp; {status_pill('Extracted', variant='approve')}" if (active_cohort == "None (Manual Upload)" and has_custom_files) else ""
             st.markdown(f"#### :material/domain_disabled: Borrower Master Profile &nbsp; {ent_hdr_pill}{hdr_chip}", unsafe_allow_html=True)
-            is_corp = st.toggle("Registered Corporate? (MCA CIN)", value=False, key="case_is_corporate")
+            is_corp = st.toggle("Registered Corporate? (MCA CIN)", key="case_is_corporate")
 
             if is_corp != is_corporate:
                 st.session_state.active_is_corporate = is_corp
@@ -483,7 +484,7 @@ with col_borrower:
             st.text_input("Corporate ID Number (CIN)", value=cin_disabled_val, disabled=True, key="case_cin_disabled_display")
             render_callout(cin_disabled_callout, title="Statutory Registration: Bypassed", variant="neutral", padding="6px 12px", margin="4px 0 8px 0")
 
-            pan_val = st.text_input("Proprietor / Entity PAN", value=ctx["pan_input"], key="case_pan_input")
+            pan_val = st.text_input("Proprietor / Entity PAN", key="case_pan_input")
             if pan_val.strip().upper() != ctx["pan_input"].strip().upper():
                 st.session_state.active_pan_input = pan_val.strip().upper()
                 st.session_state.extracted_case = None
