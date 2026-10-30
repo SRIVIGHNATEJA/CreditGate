@@ -237,6 +237,9 @@ def init_session_state():
         st.session_state.sb_cohort_selection = "Cohort 1: Prime MSME (Apex Industrial Benchmark)"
     if "active_is_corporate" not in st.session_state:
         st.session_state.active_is_corporate = True
+    if "case_is_corporate" not in st.session_state:
+        st.session_state.case_is_corporate = True
+        st.session_state["case_is_corporate"] = True
     if "active_cin_selection" not in st.session_state:
         st.session_state.active_cin_selection = "U29253DL2018PTC334120"
     if "sb_cin_input" not in st.session_state:

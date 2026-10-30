@@ -256,6 +256,15 @@ st.markdown("""
     [data-testid="stDataFrame"], [data-testid="stTable"] {
         -webkit-overflow-scrolling: touch;
     }
+
+    /* Suppress zero-height component iframe container margins */
+    iframe[title="streamlit.components.v1.html"],
+    div[data-testid="stCustomComponentV1"]:has(iframe[height="0"]) {
+        display: none !important;
+        height: 0px !important;
+        margin: 0px !important;
+        padding: 0px !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -286,3 +295,9 @@ st.session_state.current_page = active_workflow_stage
 render_stepper(active_workflow_stage)
 
 pg.run()
+
+# ----------------------------------------------------------------------------
+# 4. MOBILE VIEWPORT ENFORCEMENT (NATIVE DESKTOP LAYOUT FIDELITY)
+# ----------------------------------------------------------------------------
+from ui.components import enforce_desktop_viewport_on_mobile
+enforce_desktop_viewport_on_mobile(1280)

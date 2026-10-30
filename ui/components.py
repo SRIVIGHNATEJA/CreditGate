@@ -547,3 +547,76 @@ def stepper(current_step: str = "Case", steps: Optional[List[str]] = None) -> st
 def render_stepper(current_step: str = "Case", steps: Optional[List[str]] = None):
     """Convenience helper to render stepper directly into Streamlit."""
     _render_html(stepper(current_step, steps=steps))
+
+
+def enforce_desktop_viewport_on_mobile(target_width: int = 1280):
+    """
+    Programmatically sets mobile viewports to desktop width (1280px) via 
+    native browser compositor scaling, matching 'Desktop site' fidelity.
+    """
+    import streamlit.components.v1 as components
+
+    components.html(
+        f"""
+        <script>
+        (function() {{
+            const TARGET_WIDTH = {target_width};
+            
+            // 1. Exit immediately on true desktop monitors (screen >= 1024px)
+            const screenW = window.screen.width || window.innerWidth;
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
+                             || (screenW > 0 && screenW < 1024);
+            if (!isMobile) return;
+
+            // 2. Prevent reflow flicker on Streamlit reruns
+            try {{
+                if (window.top && window.top.__cg_viewport_locked) return;
+                if (window.parent && window.parent.__cg_viewport_locked) return;
+            }} catch(e) {{}}
+
+            const scale = Math.max(0.2, Math.min(1.0, (screenW / TARGET_WIDTH))).toFixed(4);
+            const desktopViewport = `width=${{TARGET_WIDTH}}, initial-scale=${{scale}}, minimum-scale=0.15, maximum-scale=5.0, user-scalable=yes`;
+
+            function applyViewport(doc) {{
+                if (!doc || !doc.head) return;
+                let meta = doc.querySelector('meta[name="viewport"]');
+                if (!meta) {{
+                    meta = doc.createElement('meta');
+                    meta.name = 'viewport';
+                    doc.head.appendChild(meta);
+                }}
+                
+                // Two-step invalidation forces Chromium to flush cached mobile scale
+                meta.setAttribute('content', 'width=device-width, initial-scale=0.1');
+                setTimeout(() => {{
+                    meta.setAttribute('content', desktopViewport);
+                }}, 25);
+
+                if (doc.documentElement) {{
+                    doc.documentElement.style.minWidth = `${{TARGET_WIDTH}}px`;
+                }}
+                if (doc.body) {{
+                    doc.body.style.minWidth = `${{TARGET_WIDTH}}px`;
+                }}
+            }}
+
+            try {{
+                if (window.top && window.top.document) {{
+                    applyViewport(window.top.document);
+                    window.top.__cg_viewport_locked = true;
+                }}
+            }} catch(e) {{}}
+
+            try {{
+                if (window.parent && window.parent.document) {{
+                    applyViewport(window.parent.document);
+                    window.parent.__cg_viewport_locked = true;
+                }}
+            }} catch(e) {{}}
+        }})();
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
+

@@ -263,6 +263,8 @@ with col_borrower:
             )
             hdr_chip = f" &nbsp; {status_pill('Extracted', variant='approve')}" if (active_cohort == "None (Manual Upload)" and has_custom_files) else ""
             st.markdown(f"#### :material/domain: Borrower Master Profile (MCA-21){hdr_chip}", unsafe_allow_html=True)
+            if "case_is_corporate" not in st.session_state:
+                st.session_state.case_is_corporate = True
             is_corp = st.toggle("Registered Corporate? (MCA CIN)", key="case_is_corporate")
 
             if is_corp != is_corporate:
@@ -437,6 +439,8 @@ with col_borrower:
             )
             hdr_chip = f" &nbsp; {status_pill('Extracted', variant='approve')}" if (active_cohort == "None (Manual Upload)" and has_custom_files) else ""
             st.markdown(f"#### :material/domain_disabled: Borrower Master Profile &nbsp; {ent_hdr_pill}{hdr_chip}", unsafe_allow_html=True)
+            if "case_is_corporate" not in st.session_state:
+                st.session_state.case_is_corporate = False
             is_corp = st.toggle("Registered Corporate? (MCA CIN)", key="case_is_corporate")
 
             if is_corp != is_corporate:
