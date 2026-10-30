@@ -2,16 +2,20 @@
 **Enterprise MSME Underwriting Copilot & Deterministic Risk Decision-Support System**
 
 > 🔐 Licensed under **Apache License 2.0**  
-> 📌 Developed by **Sri Vighna Teja** | 2026 | Portfolio Project
+> 📌 Developed by **Sri Vighna Teja** | 2026 | Portfolio Project  
+> 🚀 **Live Production Application:** [creditgate.streamlit.app](https://creditgate.streamlit.app)
 
 <div align="center">
-  <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python"/>
-  <img src="https://img.shields.io/badge/Streamlit-1.40%2B-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white" alt="Streamlit"/>
-  <img src="https://img.shields.io/badge/Pydantic-v2.8-E92063?style=for-the-badge&logo=pydantic&logoColor=white" alt="Pydantic"/>
-  <img src="https://img.shields.io/badge/Math-100%25_Python_Decimal-0F766E?style=for-the-badge" alt="Decimal Math"/>
-  <img src="https://img.shields.io/badge/Audit-SHA--256_Chained-0B1F3A?style=for-the-badge" alt="SHA-256 Audit"/>
-  <img src="https://img.shields.io/badge/Exports-Word_%26_PDF_CAM-15803D?style=for-the-badge" alt="Word and PDF CAM"/>
-  <img src="https://img.shields.io/badge/Pytest-112_Tests_Passing-green?style=for-the-badge&logo=pytest&logoColor=white" alt="Pytest"/>
+
+  [![Live Demo](https://img.shields.io/badge/Live_Demo-creditgate.streamlit.app-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://creditgate.streamlit.app)
+  [![Release](https://img.shields.io/badge/Release-v1.0.0-0A84FF?style=for-the-badge&logo=github&logoColor=white)](https://github.com/SRIVIGHNATEJA/CreditGate/releases/tag/v1.0.0)
+  [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+  [![Pydantic](https://img.shields.io/badge/Pydantic-v2.8-E92063?style=for-the-badge&logo=pydantic&logoColor=white)](https://docs.pydantic.dev/)
+  [![Math](https://img.shields.io/badge/Math-100%25_Python_Decimal-0F766E?style=for-the-badge)](https://docs.python.org/3/library/decimal.html)
+  [![Audit](https://img.shields.io/badge/Audit-SHA--256_Hash_Chain-0B1F3A?style=for-the-badge)](https://en.wikipedia.org/wiki/Cryptographic_hash_function)
+  [![Keep-Alive](https://img.shields.io/badge/Uptime-Autonomous_Playwright-2EAD33?style=for-the-badge&logo=playwright&logoColor=white)](https://github.com/SRIVIGHNATEJA/CreditGate/actions)
+  [![Pytest](https://img.shields.io/badge/Pytest-113_Tests_Passing-green?style=for-the-badge&logo=pytest&logoColor=white)](https://docs.pytest.org/)
+
 </div>
 
 ---
@@ -26,11 +30,12 @@
 
 Engineered for commercial lending institutions, private credit desks, and NBFCs requiring strict regulatory compliance and reproducible credit sanction decisions:
 
-*   **Underwriting Cycle Reduction:** Slashes initial MSME financial appraisal time from **5–7 business days to <15 minutes** without sacrificing scrutiny.
+*   **Underwriting Cycle Reduction:** Slashes initial MSME financial appraisal time from **5–7 business days to <15 minutes** without sacrificing analytical rigor.
 *   **Zero Math Hallucination:** Eliminates LLM calculation risks by enforcing pure Python `Decimal` fixed-precision arithmetic for Debt-Service Coverage Ratios (DSCR), monthly EMI obligations, and Five-Cs weighted scores.
 *   **Cross-Document Forensic Triangulation:** Automatically reconciles taxable turnover (GSTR-3B) against annual bank collections and ITR gross income, flagging circular trading when revenue variance exceeds **10%**.
 *   **Statutory Judicial Surveillance:** Screens applicant entities across **672 District Courts (e-Courts NJDG)**, **16 NCLT Benches (IBC 2016)**, **IBBI**, and **DRT/SARFAESI** registries with strict PAN/CIN disambiguation.
 *   **Cryptographic Audit Provenance:** Every human adjudication, parameter adjustment, and override is stamped in a tamper-evident SHA-256 hash-chained ledger, exporting formal Microsoft Word (`.docx`) and printable PDF (`.pdf`) Credit Appraisal Memoranda (CAM).
+*   **Autonomous Operational Resilience:** Employs an off-peak headless Playwright keep-alive workflow that resets Cloud runtime sleep counters in under 35 seconds without user intervention.
 
 ---
 
@@ -40,7 +45,7 @@ CreditGate implements a decoupled, 4-stage pipeline that enforces complete separ
 
 ```mermaid
 flowchart LR
-    %% Styles
+    %% Colors and Styles
     classDef intake fill:#f8fafc,stroke:#cbd5e1,stroke-width:1px,color:#0b1f3a;
     classDef extract fill:#f0fdfa,stroke:#99f6e4,stroke-width:1px,color:#0f766e;
     classDef core fill:#eff6ff,stroke:#bfdbfe,stroke-width:1px,color:#1e40af;
@@ -48,7 +53,7 @@ flowchart LR
     classDef export fill:#f0fdf4,stroke:#bbf7d0,stroke-width:1px,color:#15803d;
 
     subgraph Stage1 ["1. Intake & Master Profile"]
-        A["Borrower Profile<br/>(MCA CIN / PAN)"]:::intake --> B["Sector Taxonomy<br/>(NIC-2008 & Vintage)"]:::intake
+        A["Borrower Profile<br/>(MCA-21 CIN / PAN)"]:::intake --> B["Sector Taxonomy<br/>(NIC-2008 & Vintage)"]:::intake
         B --> C["Facility Calibration<br/>(Amount, Rate, Tenure)"]:::intake
     end
 
@@ -61,7 +66,7 @@ flowchart LR
     subgraph Stage3 ["3. Deterministic Decision Engine"]
         G -- "Locked State" --> H["Deterministic Five Cs<br/>(Python Decimal Math)"]:::core
         H --> I["Statutory Legal Radar<br/>(eCourts, NCLT, IBBI)"]:::core
-        I --> J["Policy Gate & Weakest Link<br/>(DSCR & Knockouts)"]:::core
+        I --> J["Policy Gate & Knockouts<br/>(DSCR & Bounces)"]:::core
         J --> K["Quorum Governance Shield<br/>(Level-3 Dual-Signoff)"]:::gov
     end
 
@@ -79,14 +84,16 @@ flowchart LR
 
 In technical advisory and enterprise banking, architectural choices must withstand model risk management and regulatory scrutiny:
 
-| Requirement / Challenge | Technical Implementation | Consulting Rationale |
+| Requirement / Challenge | Technical Implementation | Consulting & Regulatory Rationale |
 | :--- | :--- | :--- |
 | **Zero Math Hallucination** | **Pure Python `Decimal`** (Fixed-precision 2-4 decimal places) | Generative LLMs frequently make subtle floating-point arithmetic errors. Financial ratios (DSCR, EMI, weighted scores) must be 100% deterministic and legally reproducible. |
 | **Separation of Extraction & Decision** | **Strict Pydantic V2 Schemas** (`CreditCase`, `BankExtraction`) | LLMs are restricted to structured document extraction and summarization. The credit scoring and knockout decisions are executed entirely by code without model discretion. |
-| **Human-in-the-Loop Governance** | **Mandatory Financial Lockout Gate** (`st.data_editor`) | Prevents automated pipeline execution on unverified OCR output. An underwriter must review and cryptographically lock financial tables before scoring triggers. |
-| **Statutory False-Positive Adjudication** | **Legal Docket Citations & Adjudication** (`CONFIRMED` / `DISMISSED`) | In Indian commercial law, company homonyms cause severe credit misdiagnoses. Underwriters can review order citations (e.g. NCLT CIRP vs. homonym dismissal) with 1-click audit logging. |
-| **Insolvency Lockout Rule** | **Immutable Policy Shield** | Discretionary committee overrides are permanently disabled if an admitted SEVERE insolvency finding (e.g. NCLT Section 7/9) is confirmed, preventing corrupt or rogue sanctions. |
-| **Tamper-Evident Accountability** | **SHA-256 Event Chaining** (`verify_chain()`) | Creates an unalterable audit ledger from the genesis block (`e3b0c442`) to final memorandum export, satisfying internal and statutory audit inspections. |
+| **Dual-Engine SLA Circuit Breaker** | **Module-Level ThreadPool & Deterministic Fallback** | Wraps cloud multimodal inference in a strict 6.0s timeout pool. If the API latency spikes or gateway errors occur, the pipeline instantly fails over to local PyMuPDF regex extraction. |
+| **Human-in-the-Loop Governance** | **Mandatory Financial Lockout Gate** (`st.data_editor`) | Prevents automated pipeline execution on unverified OCR output. An underwriter must review, calibrate, and cryptographically lock financial tables before scoring triggers. |
+| **Statutory False-Positive Adjudication** | **Legal Docket Citations & Adjudication** (`CONFIRMED` / `DISMISSED`) | In Indian commercial law, company homonyms cause severe credit misdiagnoses. Underwriters can review order citations (e.g., NCLT CIRP vs. homonym dismissal) with 1-click audit logging. |
+| **Insolvency Lockout Rule** | **Immutable Policy Shield** | Discretionary committee overrides are permanently disabled if an admitted SEVERE insolvency finding (e.g., NCLT Section 7/9) is confirmed, preventing corrupt or rogue sanctions. |
+| **Tamper-Evident Accountability** | **SHA-256 Event Chaining** (`verify_chain()`) | Creates an unalterable audit ledger from the genesis block (`e3b0c442`) to final memorandum export, satisfying internal risk and statutory RBI audit inspections. |
+| **High-Uptime Cloud Availability** | **Headless Playwright Keep-Alive** (Off-peak cron `23 1,9,17 * * *`) | Prevents cloud runtime cold sleeps. Executes automated WebSocket sessions off peak-hour load, maintaining 100% warm availability for evaluators. |
 
 ---
 
@@ -103,7 +110,7 @@ sequenceDiagram
     participant CC as Credit Committee (Dual-Signoff)
 
     U->>UI: Upload Financial PDFs (Bank, GST, ITR)
-    UI->>EX: Ingest & Parse Documents
+    UI->>EX: Ingest & Parse Documents (Gemini / PyMuPDF)
     EX-->>UI: Populate Verification Grid (Pydantic Model)
     Note over U,UI: Human-in-the-Loop Verification Gate
     U->>UI: Review Extracted Line Items & Click "Lock Financials"
@@ -135,9 +142,9 @@ To validate deterministic stability under varying financial stress, CreditGate i
 
 | Benchmark Cohort | Financial Profile | Forensic Signals | DSCR | Deciding Rule | Final Verdict |
 | :--- | :--- | :--- | :---: | :--- | :---: |
-| **Cohort 1: Prime MSME**<br/>*(Apex Synthetic Holdings)* | Revenue: ₹10.40 Cr<br/>PAT: ₹0.85 Cr<br/>Debt: ₹1.20 Cr | Clean MCA RoC records<br/>0 cheque bounces<br/>Clean judicial dockets | **1.62x** | Baseline Five-Cs Weighted Score (**96.3 / 100**) | <span style="color:#15803d; font-weight:700;">APPROVE</span> |
-| **Cohort 2: Distressed Fleet**<br/>*(Kaveri Fictitious Freight)* | Revenue: ₹6.20 Cr<br/>PAT: ₹0.05 Cr<br/>Debt: ₹3.10 Cr | 5 mandate cheque bounces<br/>Active NCLT Sec 9 CIRP<br/>Negative operating cash flow | **0.88x** | Policy Knockout:<br/>`BOUNCE_KNOCKOUT` (≥3 bounces) | <span style="color:#b91c1c; font-weight:700;">REJECT</span> |
-| **Cohort 3: Turnover Variance**<br/>*(Bharat Mock Steels & Infra)* | Revenue: ₹14.80 Cr<br/>PAT: ₹0.18 Cr<br/>Debt: ₹4.50 Cr | 12.5% GST-Bank turnover gap<br/>1 mandate bounce<br/>Pending GST demand notice | **1.04x** | Weakest-Link Cap:<br/>`CONDITIONS` pillar capped at 35.0 | <span style="color:#b45309; font-weight:700;">CONDITIONAL</span> |
+| **Cohort 1: Prime MSME**<br/>*(Apex Industrial Benchmark)* | Revenue: ₹10.40 Cr<br/>PAT: ₹0.85 Cr<br/>Existing Debt: ₹1.20 Cr | Clean MCA RoC records<br/>0 cheque bounces<br/>Clean judicial dockets | **1.62x** | Baseline Five-Cs Weighted Score (**96.3 / 100**) | <span style="color:#15803d; font-weight:700;">APPROVE</span> |
+| **Cohort 2: Distressed**<br/>*(Kaveri Logistics Benchmark)* | Revenue: ₹6.20 Cr<br/>PAT: ₹0.05 Cr<br/>Existing Debt: ₹3.10 Cr | 5 mandate cheque bounces<br/>Active NCLT Sec 9 CIRP<br/>Negative operating cash flow | **0.88x** | Policy Knockout:<br/>`BOUNCE_KNOCKOUT` (≥3 bounces) | <span style="color:#b91c1c; font-weight:700;">REJECT</span> |
+| **Cohort 3: Mismatch Trap**<br/>*(Bharat Structural Benchmark)* | Revenue: ₹14.80 Cr<br/>PAT: ₹0.18 Cr<br/>Existing Debt: ₹4.50 Cr | 12.5% GST-Bank turnover gap<br/>1 mandate bounce<br/>Pending GST demand notice | **1.04x** | Weakest-Link Cap:<br/>`CONDITIONS` pillar capped at 35.0 | <span style="color:#b45309; font-weight:700;">CONDITIONAL</span> |
 
 </div>
 
@@ -145,21 +152,26 @@ To validate deterministic stability under varying financial stress, CreditGate i
 
 ## 🔍 Forensic Engineering & Root Cause Analyses (RCA)
 
-Enterprise software engineering is proven when resolving silent system failures. Below are key engineering incident spot-checks solved during development:
+Enterprise software engineering is proven when diagnosing and resolving silent system failures. Below are four key engineering incident spot-checks solved during development:
 
 ### 1. Incident Spotlight: Floating-Point Division Drift in DSCR
 *   **The Symptom:** Under standard IEEE 754 floating-point math, a borrower with Cash Available for Debt Service (CADS) of `₹2,062,500.00` and Total Debt Service of `₹1,650,000.00` produced a computed DSCR of `1.2499999999999998x`. The policy gate rule strictly requires `DSCR >= 1.25x`, erroneously triggering a conditional covenant penalty.
-*   **The Root Cause:** Binary floating-point representation cannot represent fractional decimal values precisely.
+*   **The Root Cause:** Binary floating-point representation cannot represent fractional decimal values precisely in memory.
 *   **The Remediation:** Replaced all financial math across `core/analyser.py` and `core/scorer.py` with Python's fixed-precision `decimal.Decimal` with explicit `ROUND_HALF_UP` quantizing. `Decimal('2062500.00') / Decimal('1650000.00')` evaluates cleanly to `1.2500x`, eliminating spurious policy rejections.
 
-### 2. Incident Spotlight: CommonMark 4-Space Code Block Leak in Streamlit
-*   **The Symptom:** Custom-styled institutional HTML callouts occasionally rendered as raw, unformatted monospace code boxes in the Streamlit UI.
-*   **The Root Cause:** CommonMark specification dictates that any line indented by 4 or more spaces inside a Markdown block is automatically treated as an indented code block (`<pre><code>`), intercepting `unsafe_allow_html=True`.
-*   **The Remediation:** Built an internal sanitization utility (`_clean_html()` in `ui/components.py`) that strips leading whitespace from every HTML template line and eliminates empty lines before passing to `st.markdown()`, permanently preventing parser code block escapes.
+### 2. Incident Spotlight: Google Gateway 400 & ThreadPool Context Manager Lock
+*   **The Symptom:** Under high concurrency, invoking Google's Gemini API with client timeouts triggered an `HTTP 400 Bad Request` (`X-Server-Timeout < 10000ms`), while wrapping fallback calls in Python's `with ThreadPoolExecutor()` blocked the thread because `__exit__` calls `shutdown(wait=True)`.
+*   **The Root Cause:** Cloud API gateways enforce minimum server timeout constraints, and ephemeral context managers prevent immediate failover by forcing the caller to wait for the hanging child thread to finish.
+*   **The Remediation:** Removed invalid client headers, instantiated a module-level persistent `_GEMINI_EXECUTOR = ThreadPoolExecutor(max_workers=4)`, and decoupled failover execution so timeout triggers immediately drop into the deterministic PyMuPDF extractor without thread starvation.
 
-### 3. Incident Spotlight: Discretionary Override Boundary Leak on Admitted Insolvency
+### 3. Incident Spotlight: Session State Widget Pre-Population Collision
+*   **The Symptom:** When users switched borrower cohorts or navigated between intake screens, the server console printed repeated warning stack traces: `The widget with key "..." was created with a default value but also had its value set via the Session State API`.
+*   **The Root Cause:** Instantiating widgets with both an explicit `value=...` parameter and a `key="case_cin_input"` when that key is already bound in `st.session_state` causes Streamlit's internal validator to flag a state collision.
+*   **The Remediation:** Cleanly decoupled widget initialization into `ui/state.py: init_session_state()`, initializing the default values directly into `st.session_state` and omitting redundant `value` constructor overrides, completely silencing the console output.
+
+### 4. Incident Spotlight: Discretionary Override Boundary Leak on Admitted Insolvency
 *   **The Symptom:** An officer could theoretically activate an executive veto to override a loan rejection even when the applicant had an admitted Corporate Insolvency Resolution Process (CIRP) order at NCLT.
-*   **The Root Cause:** The executive override logic operated at the score aggregate level without inspecting individual finding severity tiers.
+*   **The Root Cause:** The executive override logic operated at the aggregate score level without inspecting individual finding severity tiers.
 *   **The Remediation:** Implemented an immutable governance shield: if any adverse finding marked as `FindingTier.SEVERE` is in `ReviewStatus.CONFIRMED` state, discretionary veto toggles are locked out at the UI layer, and the scoring engine forcefully revokes overrides if an officer confirms severe litigation later in the session.
 
 ---
@@ -191,28 +203,30 @@ Enterprise software engineering is proven when resolving silent system failures.
 
 ---
 
-## 🧪 Quality Assurance & Test Suite
+## 🧪 Quality Assurance & CI/CD Readiness
 
 The codebase is fortified by an automated test suite across parsing, math, policy, and artifact compilation:
 
-*   **Financial Math & Invariant Tests (28):** Verifies Decimal DSCR calculations, amortization EMI precision, accrual-cash gap formulas, and CGTMSE collateral credit rules.
+*   **Headless UI & Lifecycle Tests (14):** Verifies full end-to-end user navigation, tab routing, session recovery, and widget state synchronization via `streamlit.testing.v1.AppTest`.
+*   **Financial Math & Invariant Tests (28):** Verifies pure Decimal DSCR calculations, amortization EMI precision, accrual-cash gap formulas, and CGTMSE collateral credit rules.
 *   **Policy Gate & Knockout Tests (18):** Validates bounce thresholds, weakest-link pillar caps, minimum business vintage requirements, and severe litigation knockout triggers.
-*   **Document Parsing & PII Sanitization Tests (10):** Asserts strict Pydantic V2 parsing resilience, text normalization, and PAN/Aadhaar masking rules.
-*   **CAM & Export Integrity Tests (6):** Tests ReportLab PDF compilation, python-docx XML entity escaping, and SHA-256 hash-chain verification (`verify_chain()`).
+*   **Statutory Surveillance & Legal Radar Tests (20):** Tests MCA-21 CIN syntax, 4th-character PAN taxonomy, e-Courts citation matching, and anti-clean-chit watchlist interception.
+*   **CAM & Export Integrity Tests (15):** Tests ReportLab PDF compilation, python-docx XML entity escaping, and SHA-256 hash-chain verification (`verify_chain()`).
+*   **Layout & Governance Guard Tests (18):** Validates zero five-column metric row collapses, zero CommonMark code-block indents, and immutable executive override lockout rules.
 
 ```bash
-# Execute full test suite
-pytest -q
-# Output: 62 passed in 1.42s
+# Execute full test suite in virtual environment
+pytest tests/ -q
+# Output: 113 passed, 7 warnings in 13.60s
 ```
 
 ---
 
-## 🚀 Quickstart & Execution
+## 🚀 Quickstart & Reproduction
 
 ```bash
 # 1. Clone & Setup Python Virtual Environment
-git clone https://github.com/yourusername/CreditGate.git
+git clone https://github.com/SRIVIGHNATEJA/CreditGate.git
 cd CreditGate
 python3 -m venv .venv && source .venv/bin/activate
 
@@ -225,13 +239,13 @@ cp .env.example .env
 # GOOGLE_API_KEY=your_gemini_api_key_here
 
 # 4. Run Automated Test Suite
-pytest -q
+pytest tests/ -q
 
 # 5. Launch Underwriting Copilot Terminal
 streamlit run app.py
 ```
 
-*Open `http://localhost:8501` to access the underwriting copilot.*
+*The terminal will launch and bind automatically to `http://localhost:8501`.*
 
 ---
 <div align="center">
