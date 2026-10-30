@@ -2,8 +2,9 @@ name: CreditGate Keep-Alive & Self-Heal
 
 on:
   schedule:
-    # Runs every 8 hours: 00:00, 08:00, 16:00 UTC (4-hour safety margin inside the 12h sleep window)
-    - cron: '0 0,8,16 * * *'
+    # Runs every 8 hours at an uncrowded minute: 01:23, 09:23, 17:23 UTC
+    # Bypasses top-of-the-hour runner queue congestion completely
+    - cron: '23 1,9,17 * * *'
   workflow_dispatch: # Allows manual one-click testing from GitHub Actions tab
 
 jobs:
@@ -23,7 +24,7 @@ jobs:
           pip install playwright
           playwright install --with-deps chromium
 
-      - name: Execute Autonomous Browser Handshake
+      - name: Execute Autonomous Stealth Handshake
         run: |
           python - << 'EOF'
           import sys
@@ -35,10 +36,14 @@ jobs:
           with sync_playwright() as p:
               browser = p.chromium.launch(
                   headless=True,
-                  args=["--disable-blink-features=AutomationControlled"]
+                  args=[
+                      "--disable-blink-features=AutomationControlled",
+                      "--no-sandbox",
+                      "--disable-dev-shm-usage"
+                  ]
               )
               context = browser.new_context(
-                  user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                  user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                   viewport={"width": 1440, "height": 900}
               )
               page = context.new_page()
@@ -49,7 +54,7 @@ jobs:
               except Exception as e:
                   print(f"[!] Navigation notice: {e}")
 
-              time.sleep(6)
+              time.sleep(5)
 
               # Inspect DOM for Streamlit's Deep Sleep Wake Button
               wake_button = page.locator('button:has-text("Wake app up"), button:has-text("Yes, get this app back up")')
@@ -62,7 +67,8 @@ jobs:
               else:
                   print("✅ Container is active. Verifying session mount...")
                   try:
-                      page.wait_for_selector('[data-testid="stApp"], .stApp, #root', timeout=30000)
+                      page.wait_for_selector('[data-testid="stApp"], .stApp, #root', timeout=30000, state="attached")
+                      time.sleep(3)
                       title = page.title()
                       print("✅ Full application DOM & WebSocket mounted successfully.")
                       print(f"✅ Successfully connected to: {title}")
