@@ -421,7 +421,7 @@ else:
             )
             engine_choice = st.radio(
                 "Engine Mode",
-                options=["Deterministic Native (PyMuPDF Offline)", "Multimodal AI (Gemini 3.5 Flash Lite)"],
+                options=["Deterministic Native (Institutional Offline)", "Multimodal AI (Gemini 3.5 Flash Lite)"],
                 key="ev_engine_select",
                 horizontal=True,
                 label_visibility="collapsed",

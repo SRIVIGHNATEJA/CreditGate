@@ -27,7 +27,7 @@ logging.basicConfig(level=logging.INFO)
 _GEMINI_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="gemini_sla_worker")
 
 # ============================================================================
-# 1. PYMUPDF SLICING & HEURISTIC ANCHOR DETECTION
+# 1. DETERMINISTIC SLICING & HEURISTIC ANCHOR DETECTION
 # ============================================================================
 
 DOC_ANCHORS = {
@@ -123,7 +123,7 @@ def extract_entity_identifiers(
     """
     Extracts statutory entity identifiers (CIN, PAN, GSTIN, Legal/Trade Name, Entity Type)
     from uploaded manual document byte streams (Bank statement, GSTR-3B, ITR acknowledgement).
-    Executes with zero API latency and zero cost via deterministic PyMuPDF text layer inspection.
+    Executes with zero API latency and zero cost via deterministic text layer inspection.
     Used strictly for manual custom uploads (benchmark cohorts remain tied to their canonical definitions).
     """
     itr_text = ""
@@ -739,7 +739,7 @@ def extract_all_documents(
 
     has_key = bool(gemini_api_key or get_gemini_api_key() or GEMINI_API_KEY)
     diagnostic_code = "CONNECTED" if primary_engine == "AI_GEMINI" else ("FORCE_DETERMINISTIC" if force_deterministic else ("KEY_MISSING" if not has_key else "FALLBACK_DETERMINISTIC"))
-    engine_display = f"Multimodal AI ({MODEL_EXTRACTION})" if primary_engine == "AI_GEMINI" else "Deterministic Regex (PyMuPDF)"
+    engine_display = f"Multimodal AI ({MODEL_EXTRACTION})" if primary_engine == "AI_GEMINI" else "Deterministic Regex (Institutional Engine)"
 
     metadata = {
         "execution_latency_seconds": round(elapsed_time, 3),

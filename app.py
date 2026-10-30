@@ -257,11 +257,14 @@ st.markdown("""
         -webkit-overflow-scrolling: touch;
     }
 
-    /* Suppress zero-height component iframe container margins */
+    /* Suppress mobile viewport enforcer iframe container */
+    iframe[title="st.iframe"],
     iframe[title="streamlit.components.v1.html"],
-    div[data-testid="stCustomComponentV1"]:has(iframe[height="0"]) {
+    div[data-testid="stIframe"],
+    div[data-testid="stCustomComponentV1"] {
         display: none !important;
         height: 0px !important;
+        width: 0px !important;
         margin: 0px !important;
         padding: 0px !important;
     }
@@ -299,5 +302,7 @@ pg.run()
 # ----------------------------------------------------------------------------
 # 4. MOBILE VIEWPORT ENFORCEMENT (NATIVE DESKTOP LAYOUT FIDELITY)
 # ----------------------------------------------------------------------------
-from ui.components import enforce_desktop_viewport_on_mobile
-enforce_desktop_viewport_on_mobile(1280)
+if not st.session_state.get("_mobile_viewport_enforced", False):
+    from ui.components import enforce_desktop_viewport_on_mobile
+    enforce_desktop_viewport_on_mobile(1280)
+    st.session_state._mobile_viewport_enforced = True
