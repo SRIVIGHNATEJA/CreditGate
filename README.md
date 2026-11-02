@@ -300,6 +300,11 @@ streamlit run app.py
 *The terminal will launch and bind automatically to `http://localhost:8501`.*
 
 ---
+
+## 📜 License & Compliance
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)** to maintain compatibility with downstream document intelligence dependencies (including PyMuPDF). The extraction layer is abstracted to allow commercial deployments to hot-swap to permissive BSD/MIT engines without modifying core underwriting logic.
+
+---
 <div align="center">
   <i>Architected to demonstrate institutional financial engineering, deterministic AI guardrails, and regulatory-grade commercial underwriting systems.</i>
 </div>
