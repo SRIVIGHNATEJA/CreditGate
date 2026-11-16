@@ -20,6 +20,7 @@ data/*
 !data/synthetic/**
 *.docx
 
-# Editor metadata
-.agents/
-.claude/
+# OS & Temp
+.DS_Store
+**/.DS_Store
+*.tmp
