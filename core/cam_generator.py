@@ -622,14 +622,24 @@ def generate_cam_markdown(
         md.append("- **Screening Module Status:** `PENDING_ADVOCATE_AUDIT`")
         md.append("> **Statutory Clearance Pending:** Unindexed MSME entity. Under RBI commercial lending guidelines, an Empanelled Advocate Title Search Report (TSR) and Non-Encumbrance Certificate (NEC) are mandatory prior to facility disbursement.")
     elif adverse_media_report.status == "COMPLETED":
-        if adverse_media_report.findings:
-            md.append("- **Screening Module Status:** `ADVERSE_FINDINGS_IDENTIFIED (Surveillance Active)`")
+        all_findings = adverse_media_report.findings or []
+        adverse_findings = [
+            f for f in all_findings
+            if str(getattr(f.tier, "value", f.tier)).upper() not in ("INFORMATIONAL", "CLEAR", "NONE")
+        ]
+        if adverse_findings:
+            md.append(f"- **Screening Module Status:** `ADVERSE_FINDINGS_IDENTIFIED ({len(adverse_findings)} Adverse Record(s))`")
+        elif all_findings:
+            md.append("- **Screening Module Status:** `CLEARED (Informational Record Only)`")
         else:
             md.append("- **Screening Module Status:** `COMPLETED (Zero Adverse Records)`")
         display_query = f'"{borrower_name}" AND "{cin_val}"' if cin_val != "UNREGISTERED_MSME" else f'"{borrower_name}"'
         md.append(f"- **Anchored Search Query:** `{display_query}`")
         if adverse_media_report.is_synthetic_demo:
-            md.append("> **Judicial Surveillance Note:** Curated statutory litigation & regulatory records evaluated against official court benches and MCA registries.")
+            if adverse_findings:
+                md.append("> **Judicial Surveillance Note:** Curated statutory litigation & regulatory records evaluated against official court benches and MCA registries.")
+            elif all_findings:
+                md.append("> **Statutory Clearance Verified (Informational Record Only):** Zero adverse litigation or insolvency petitions identified in the offline synthetic archive. Informational filing(s) noted below for record completeness.")
             md.append("")
 
         if adverse_media_report.findings:
@@ -1333,12 +1343,25 @@ def generate_cam_docx(
             fill_hex="F8FAFC"
         )
     elif adverse_media_report.findings:
-        _add_docx_callout(
-            "Statutory Judicial Flag (Adverse Findings Identified):",
-            f"{len(adverse_media_report.findings)} adverse litigation / insolvency record(s) identified across NCLT/DRT/District Courts. Material credit risk identified. Anchored Query: {display_query}.",
-            border_hex="DC2626",
-            fill_hex="FEF2F2"
-        )
+        all_findings = adverse_media_report.findings
+        adverse_findings = [
+            f for f in all_findings
+            if str(getattr(f.tier, "value", f.tier)).upper() not in ("INFORMATIONAL", "CLEAR", "NONE")
+        ]
+        if adverse_findings:
+            _add_docx_callout(
+                "Statutory Judicial Flag (Adverse Findings Identified):",
+                f"{len(adverse_findings)} adverse litigation / insolvency record(s) identified across NCLT/DRT/District Courts. Material credit risk identified. Anchored Query: {display_query}.",
+                border_hex="DC2626",
+                fill_hex="FEF2F2"
+            )
+        else:
+            _add_docx_callout(
+                "Statutory Clearance Verified (Informational Record Only):",
+                f"Zero adverse litigation or insolvency petitions identified in the offline synthetic archive. Informational filing(s) noted below for record completeness. Anchored Query: {display_query}.",
+                border_hex="10B981",
+                fill_hex="F0FDF4"
+            )
         legal_headers = ["Litigation / Statutory Record", "Severity Tier", "Statutory Authority / Docket", "Adjudication Status"]
         legal_rows = []
         for f in adverse_media_report.findings:
@@ -1815,12 +1838,25 @@ def generate_cam_pdf(
             bg_color="#F8FAFC"
         ))
     elif adverse_media_report.findings:
-        story.append(_build_pdf_callout(
-            "Statutory Judicial Flag (Adverse Findings Identified):",
-            f"{len(adverse_media_report.findings)} adverse litigation / insolvency record(s) identified across NCLT/DRT/District Courts. Material credit risk identified. Anchored Query: {display_query}.",
-            border_color="#DC2626",
-            bg_color="#FEF2F2"
-        ))
+        all_findings = adverse_media_report.findings
+        adverse_findings = [
+            f for f in all_findings
+            if str(getattr(f.tier, "value", f.tier)).upper() not in ("INFORMATIONAL", "CLEAR", "NONE")
+        ]
+        if adverse_findings:
+            story.append(_build_pdf_callout(
+                "Statutory Judicial Flag (Adverse Findings Identified):",
+                f"{len(adverse_findings)} adverse litigation / insolvency record(s) identified across NCLT/DRT/District Courts. Material credit risk identified. Anchored Query: {display_query}.",
+                border_color="#DC2626",
+                bg_color="#FEF2F2"
+            ))
+        else:
+            story.append(_build_pdf_callout(
+                "Statutory Clearance Verified (Informational Record Only):",
+                f"Zero adverse litigation or insolvency petitions identified in the offline synthetic archive. Informational filing(s) noted below for record completeness. Anchored Query: {display_query}.",
+                border_color="#10B981",
+                bg_color="#F0FDF4"
+            ))
         story.append(Spacer(1, 2))
         legal_rows = [["Litigation / Statutory Record", "Severity Tier", "Authority / Docket", "Adjudication Status"]]
         for f in adverse_media_report.findings:
