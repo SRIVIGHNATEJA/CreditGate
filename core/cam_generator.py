@@ -311,8 +311,9 @@ def generate_cam_markdown(
     borrower_name = resolve_legal_entity_name(credit_case.company_name, cin_chk)
 
     md = [
+        "> **SYNTHETIC DEMONSTRATION DOSSIER — SAMPLE OUTPUT FOR EVALUATION**  ",
         "> **STRICTLY CONFIDENTIAL — FOR INTERNAL CREDIT SANCTION COMMITTEE USE ONLY**  ",
-        "> **GOVERNED UNDER RBI MASTER DIRECTION — FAIR PRACTICES CODE (FPC) FOR LENDERS**",
+        "> **STRUCTURED ON COMMERCIAL CREDIT APPRAISAL (FPC) TEMPLATE**",
         "",
     ]
 
@@ -608,7 +609,7 @@ def generate_cam_markdown(
         md.append("> **Statutory Clearance Pending:** All-India litigation and insolvency registry surveillance was not executed prior to CAM generation. Under Bank Credit Policy (§7.4), facility sanction is conditional upon completing statutory registry due diligence or empanelled advocate title investigation.")
     elif adverse_media_report.status == "NO_ADVERSE_FINDINGS":
         md.append("- **Screening Module Status:** `CLEARED (Zero Adverse Records)`")
-        md.append("> **Statutory Judicial Clearance:** Zero adverse litigation, insolvency petitions, or regulatory demands identified across 672 district courts, NCLT benches, and corporate registries.")
+        md.append("> **Statutory Judicial Clearance:** Zero adverse litigation, insolvency petitions, or regulatory demands identified in the offline synthetic statutory docket archive.")
     elif adverse_media_report.status == "RESEARCH_UNAVAILABLE":
         if adverse_media_report.is_synthetic_demo:
             md.append("- **Screening Module Status:** `CLEARED (Curated Benchmark Registry)`")
@@ -1123,10 +1124,16 @@ def generate_cam_docx(
     r2.font.bold = True
     r2.font.color.rgb = RGBColor(255, 255, 255)
 
-    r3 = p_fpc.add_run("GOVERNED UNDER RBI MASTER DIRECTION — FAIR PRACTICES CODE (FPC) FOR LENDERS")
+    r3 = p_fpc.add_run("STRUCTURED ON COMMERCIAL CREDIT APPRAISAL (FPC) TEMPLATE\n")
     r3.font.name = "Calibri"
     r3.font.size = Pt(7.5)
     r3.font.color.rgb = RGBColor(203, 213, 225)
+
+    r4 = p_fpc.add_run("SYNTHETIC DEMONSTRATION DOSSIER — SAMPLE OUTPUT FOR EVALUATION")
+    r4.font.name = "Calibri"
+    r4.font.size = Pt(7)
+    r4.font.bold = True
+    r4.font.color.rgb = RGBColor(253, 224, 71)
 
     p_sp = doc.add_paragraph()
     p_sp.paragraph_format.space_before = Pt(3)
@@ -1261,7 +1268,7 @@ def generate_cam_docx(
     if score_result.deductions:
         ded_headers = ["Rule ID", "Pillar", "Penalty", "Observed Value", "Threshold", "Policy Rationale"]
         ded_rows = [[d.rule_id, d.pillar, f"-{d.points_deducted:.1f} pts", str(d.observed_value), str(d.threshold), d.explanation] for d in score_result.deductions]
-        _add_docx_table(ded_headers, ded_rows, [1.6, 0.9, 0.8, 1.0, 1.0, 1.7])
+        _add_docx_table(ded_headers, ded_rows, [1.8, 0.85, 0.75, 0.95, 0.95, 1.7])
     else:
         _add_docx_callout("Deduction Audit Trail:", "No score deductions applied. Applicant scored 100% across all evaluated parameters.")
 
@@ -1343,7 +1350,7 @@ def generate_cam_docx(
     else:
         _add_docx_callout(
             "Statutory Judicial Clearance:",
-            f"Zero adverse litigation, insolvency petitions, or regulatory demands identified across 672 district courts, NCLT benches, and registries. Anchored Query: {display_query}.",
+            f"Zero adverse litigation, insolvency petitions, or regulatory demands identified in the offline synthetic statutory docket archive. Anchored Query: {display_query}.",
             border_hex="10B981",
             fill_hex="F0FDF4"
         )
@@ -1427,9 +1434,9 @@ def generate_cam_docx(
         ["Application Reference", "Verified Active", ctx["display_app_id"]],
         ["Deterministic Engine", "Certified", "Zero-LLM Hallucination Guarantee; 100% Python Decimal Precision"],
         ["Cryptographic Integrity", "Tamper-Evident", f"SHA-256 Hash Chain Validated ({num_events} immutable audit events logged)"],
-        ["PII Redaction Protocol", "Enforced", "RBI Digital Lending Guidelines (Full PAN & Account Masking)"],
-        ["Judicial Due Diligence", "Screened", "672 District Courts, High Courts, and 16 NCLT/NCLAT Benches"],
-        ["Audit Ledger Location", "Archival Ready", "Cryptographic event log archived in Bank DMS / Sanction Minutes repository"],
+        ["PII Redaction Protocol", "Enforced", "Automated PAN & Aadhaar Masking Before Extraction"],
+        ["Judicial Due Diligence", "Screened", "Offline Synthetic Docket Archive (Demo Screening)"],
+        ["Audit Ledger Location", "Archival Ready", "Local Session Append-Only SHA-256 JSONL Log"],
     ]
     _add_heading("APPENDIX: STATUTORY CRYPTOGRAPHIC PROVENANCE & COMPLIANCE CERTIFICATION", level=2)
     _add_docx_table(cert_headers, cert_rows, [1.8, 1.4, 3.8])
@@ -1514,16 +1521,41 @@ def generate_cam_pdf(
             st.append(('BACKGROUND', (0, r), (-1, r), bg))
         return TableStyle(st)
 
+    def _pdf_clean_plain(val: Any) -> str:
+        """Normalizes non-WinAnsi glyphs (₹, ≤, ≥, ☐) for standard ReportLab Helvetica rendering."""
+        if val is None:
+            return ""
+        s = str(val)
+        return (
+            s.replace("₹ ", "INR ")
+            .replace("₹", "INR ")
+            .replace("≤", "<=")
+            .replace("≥", ">=")
+            .replace("☐", "[ ]")
+        )
+
+    def _pdf_clean_markup(val: str) -> str:
+        """Normalizes non-WinAnsi glyphs inside ReportLab XML markup strings without breaking tags."""
+        return (
+            val.replace("₹ ", "INR ")
+            .replace("₹", "INR ")
+            .replace("≤", "&lt;=")
+            .replace("≥", "&gt;=")
+            .replace("☐", "[ ]")
+        )
+
     def _pdf_esc(val: Any) -> str:
         """Safely escapes XML characters (&, <, >) for ReportLab Paragraphs, converting newlines to <br/>."""
         if val is None:
             return ""
-        s = str(val)
+        s = _pdf_clean_plain(val)
         s = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         return s.replace("\n", "<br/>")
 
     def _build_pdf_callout(label: str, text: str, border_color="#1E3A8A", bg_color="#F8FAFC"):
-        p_text = f"<font color='{border_color}'><b>{label}</b></font> {text}" if label else text
+        clean_label = _pdf_clean_markup(label) if label else ""
+        clean_text = _pdf_clean_markup(text) if text else ""
+        p_text = f"<font color='{border_color}'><b>{clean_label}</b></font> {clean_text}" if clean_label else clean_text
         p = Paragraph(p_text, callout_style)
         t = Table([[p]], colWidths=[510], style=TableStyle([
             ('BACKGROUND', (0,0), (-1,-1), colors.HexColor(bg_color)),
@@ -1545,7 +1577,7 @@ def generate_cam_pdf(
                     row_cells.append(cell)
                 elif isinstance(cell, str) and ("<" in cell or "&" in cell):
                     st = head_style if (has_header and r_idx == 0) else (bold_style if c_idx == 0 and not has_header else body_style)
-                    row_cells.append(Paragraph(cell, st))
+                    row_cells.append(Paragraph(_pdf_clean_markup(cell), st))
                 else:
                     st = head_style if (has_header and r_idx == 0) else (bold_style if c_idx == 0 and not has_header else body_style)
                     row_cells.append(Paragraph(_pdf_esc(cell), st))
@@ -1570,7 +1602,8 @@ def generate_cam_pdf(
     fpc_p = Paragraph(
         "STRICTLY CONFIDENTIAL — FOR INTERNAL CREDIT SANCTION COMMITTEE USE ONLY<br/>"
         f"<font size='9' color='#FFFFFF'><b>{title_main}</b></font><br/>"
-        "<font size='6' color='#CBD5E1'>GOVERNED UNDER RBI MASTER DIRECTION — FAIR PRACTICES CODE (FPC) FOR LENDERS</font>",
+        "<font size='6' color='#CBD5E1'>STRUCTURED ON COMMERCIAL CREDIT APPRAISAL (FPC) TEMPLATE</font><br/>"
+        "<font size='6' color='#FDE047'><b>SYNTHETIC DEMONSTRATION DOSSIER — SAMPLE OUTPUT FOR EVALUATION</b></font>",
         fpc_style
     )
     fpc_header = Table(
@@ -1716,7 +1749,7 @@ def generate_cam_pdf(
         ded_rows = [["Rule ID", "Pillar", "Penalty", "Observed", "Threshold", "Policy Rationale"]]
         for d in score_result.deductions:
             ded_rows.append([d.rule_id, d.pillar, f"-{d.points_deducted:.1f} pts", str(d.observed_value), str(d.threshold), d.explanation])
-        story.append(_make_pdf_table(ded_rows, [110, 55, 55, 65, 65, 160]))
+        story.append(_make_pdf_table(ded_rows, [130, 55, 55, 65, 65, 140]))
     else:
         story.append(_build_pdf_callout("Deductions Notice:", "No score deductions applied. Applicant scored 100% across all evaluated parameters."))
     story.append(Spacer(1, 3))
@@ -1799,7 +1832,7 @@ def generate_cam_pdf(
     else:
         story.append(_build_pdf_callout(
             "Statutory Judicial Clearance:",
-            f"Zero adverse litigation, insolvency petitions, or regulatory demands identified across 672 district courts, NCLT benches, and registries. Anchored Query: {display_query}.",
+            f"Zero adverse litigation, insolvency petitions, or regulatory demands identified in the offline synthetic statutory docket archive. Anchored Query: {display_query}.",
             border_color="#10B981",
             bg_color="#F0FDF4"
         ))
@@ -1887,9 +1920,9 @@ def generate_cam_pdf(
         ["Application Reference", "Verified Active", ctx["display_app_id"]],
         ["Deterministic Engine", "Certified", "Zero-LLM Hallucination Guarantee; 100% Python Decimal Precision"],
         ["Cryptographic Integrity", "Tamper-Evident", f"SHA-256 Hash Chain Validated ({num_events} immutable audit events logged)"],
-        ["PII Redaction Protocol", "Enforced", "RBI Digital Lending Guidelines (Full PAN & Account Masking)"],
-        ["Judicial Due Diligence", "Screened", "672 District Courts, High Courts, and 16 NCLT/NCLAT Benches"],
-        ["Audit Ledger Location", "Archival Ready", "Cryptographic event log archived in Bank DMS / Sanction Minutes repository"],
+        ["PII Redaction Protocol", "Enforced", "Automated PAN & Aadhaar Masking Before Extraction"],
+        ["Judicial Due Diligence", "Screened", "Offline Synthetic Docket Archive (Demo Screening)"],
+        ["Audit Ledger Location", "Archival Ready", "Local Session Append-Only SHA-256 JSONL Log"],
     ]
     story.append(Paragraph("<b>APPENDIX: STATUTORY CRYPTOGRAPHIC PROVENANCE &amp; COMPLIANCE CERTIFICATION</b>", h2_style))
     story.append(_make_pdf_table([cert_headers] + cert_rows, [140, 110, 260]))

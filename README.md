@@ -106,7 +106,7 @@ flowchart TD
         SLA -- "Timeout / Offline Mode" --> FALLBACK --> RECON
     end
 
-    BRIDGE1(["<b>Raw Extraction Payload:</b> 13 Normalized Line-Items"]):::bridge
+    BRIDGE1(["<b>Raw Extraction Payload:</b> 14 Normalized Line-Items"]):::bridge
 
     subgraph Stage2 ["Stage 2: Forensic Triangulation & HITL Gate (app_pages/evidence.py)"]
         direction TB
@@ -177,7 +177,7 @@ sequenceDiagram
     U->>UI: Upload Financial PDFs & Calibrate Terms
     UI->>DISP: Dispatch extract_all_documents(bank, gst, itr)
     DISP->>EXT: Fan out 3 concurrent extraction workers
-    EXT-->>UI: Return 13 normalized line-items (Pydantic models)
+    EXT-->>UI: Return 14 normalized line-items (Pydantic models)
 
     Note over U,UI: Human-in-the-Loop (HITL) Verification Gate
     U->>UI: Inspect & Calibrate Line-Items (st.data_editor)
@@ -312,9 +312,9 @@ Evaluated under standard commercial facility terms (₹50.00 Lakhs @ 11.50% for 
 
 | Benchmark Cohort | Ground-Truth Financial Profile | Forensic Signals | DSCR | Deciding Policy Rule | Final Sanction Verdict |
 | :--- | :--- | :--- | :---: | :--- | :---: |
-| **Cohort 1: Prime MSME**<br/>*(Apex Industrial Benchmark)* | • Turnover: ₹10.40 Cr<br/>• PAT: ₹0.85 Cr<br/>• Existing Debt: ₹1.20 Cr | Clean MCA RoC records<br/>0 cheque bounces<br/>Clean judicial dockets | **1.62x** | Baseline Five-Cs Weighted Score (**96.3 / 100**) | 🟢 **APPROVE** |
-| **Cohort 2: Distressed**<br/>*(Kaveri Logistics Benchmark)* | • Turnover: ₹6.20 Cr<br/>• PAT: ₹0.05 Cr<br/>• Existing Debt: ₹3.10 Cr | 5 mandate cheque bounces<br/>Active NCLT Sec 9 CIRP<br/>Negative cash flow | **0.88x** | Policy Hard Knockout:<br/>`BOUNCE_KNOCKOUT` ($\ge 5$ bounces) | 🔴 **REJECT** |
-| **Cohort 3: Mismatch Trap**<br/>*(Bharat Structural Benchmark)* | • Turnover: ₹14.80 Cr<br/>• PAT: ₹0.18 Cr<br/>• Existing Debt: ₹4.50 Cr | 48.9% GST-Bank turnover gap<br/>1 mandate bounce<br/>PAN Entity Mismatch ('F' vs 'C') | **1.04x** | Weakest-Link Cap:<br/>`CONDITIONS` pillar capped at 30.0 | 🟡 **CONDITIONAL** |
+| **Cohort 1: Prime MSME**<br/>*(Apex Industrial Benchmark)* | • Turnover: ₹12.45 Cr<br/>• PAT: ₹1.20 Cr<br/>• Existing Debt: ₹1.80 Cr | Clean MCA RoC records<br/>0 cheque bounces<br/>Clean judicial dockets | **2.93x** | Baseline Five-Cs Weighted Score (**92.5 / 100**) | 🟢 **APPROVE** |
+| **Cohort 2: Distressed**<br/>*(Kaveri Logistics Benchmark)* | • Turnover: ₹4.10 Cr<br/>• PAT: ₹1.20 Cr<br/>• Existing Debt: ₹3.20 Cr | 5 mandate cheque bounces<br/>Active NCLT Sec 9 CIRP<br/>High leverage (8.00x D/E) | **2.55x** | Policy Hard Knockout:<br/>`BOUNCE_KNOCKOUT` ($\ge 5$ bounces) · Score **62.5** | 🔴 **REJECT** |
+| **Cohort 3: Mismatch Trap**<br/>*(Bharat Structural Benchmark)* | • Turnover: ₹4.50 Cr<br/>• PAT: ₹0.35 Cr<br/>• Existing Debt: ₹1.40 Cr | 48.9% GST-Bank turnover gap<br/>1 mandate bounce<br/>PAN Entity Mismatch ('F' vs 'C') | **1.56x** | Weakest-Link Cap:<br/>`CONDITIONS` pillar capped · Score **75.0** | 🟡 **CONDITIONAL** |
 
 </div>
 

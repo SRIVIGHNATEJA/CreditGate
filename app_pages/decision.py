@@ -1824,7 +1824,7 @@ SHA-256 Ledger Verified
                         <div>
                             <div style="font-size: 10px; font-weight: 800; color: #64748B; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Multi-Forum Judicial Verification</div>
                             <div style="font-size: 11px; color: #334155; line-height: 1.5;">
-                                Surveillance sweep cross-queries <strong>672 District Courts</strong>, <strong>16 NCLT / NCLAT Benches</strong>, and <strong>DRT Recovery Tribunals</strong> for civil decrees, IBC insolvency petitions, and Section 138 cheque dishonours.
+                                Surveillance sweep cross-queries the <strong>offline synthetic statutory docket archive</strong> (covering simulated District Court, <strong>NCLT / NCLAT</strong>, and <strong>DRT</strong> records) for civil decrees, IBC insolvency petitions, and Section 138 cheque dishonours.
                             </div>
                         </div>
                         <div>
@@ -1877,7 +1877,7 @@ SHA-256 Ledger Verified
                                         <span style="font-size: 9px; font-weight: 700; color: #15803D; background: #DCFCE7; border: 1px solid #86EFAC; padding: 2px 7px; border-radius: 4px;">GRADE-A1 CLEARANCE</span>
                                     </div>
                                     <div style="font-size: 11.5px; color: #334155; margin-top: 3px; line-height: 1.45;">
-                                        Triangulated surveillance across 672 District Courts, 16 NCLT Benches, and statutory default registries confirmed <strong>zero adverse judgments, zero insolvency proceedings, and zero active recovery notices</strong> for <strong>{company_nm}</strong>.
+                                        Triangulated surveillance across the offline synthetic statutory docket archive confirmed <strong>zero adverse judgments, zero insolvency proceedings, and zero active recovery notices</strong> for <strong>{company_nm}</strong>.
                                     </div>
                                 </div>
                             </div>
@@ -2987,7 +2987,7 @@ else:
         st.markdown(
             """
             <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 3px solid #0284C7; border-radius: 8px; padding: 12px; min-height: 140px;">
-                <div style="font-size: 11px; font-weight: 700; color: #0284C7; text-transform: uppercase;">1. CHARACTER (15%)</div>
+                <div style="font-size: 11px; font-weight: 700; color: #0284C7; text-transform: uppercase;">1. CHARACTER (20%)</div>
                 <div style="font-weight: 700; font-size: 13px; color: #0F172A; margin: 4px 0;">Entity Integrity</div>
                 <div style="font-size: 11px; color: #64748B; line-height: 1.4;">
                     • Vintage ≥ 3 Yrs<br/>
@@ -3035,7 +3035,7 @@ else:
         st.markdown(
             """
             <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 3px solid #6D28D9; border-radius: 8px; padding: 12px; min-height: 140px;">
-                <div style="font-size: 11px; font-weight: 700; color: #6D28D9; text-transform: uppercase;">4. COLLATERAL (20%)</div>
+                <div style="font-size: 11px; font-weight: 700; color: #6D28D9; text-transform: uppercase;">4. COLLATERAL (15%)</div>
                 <div style="font-weight: 700; font-size: 13px; color: #0F172A; margin: 4px 0;">Security Coverage</div>
                 <div style="font-size: 11px; color: #64748B; line-height: 1.4;">
                     • Asset Cover ≥ 33.3%<br/>

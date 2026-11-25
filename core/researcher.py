@@ -451,7 +451,7 @@ SYNTHETIC_DOCKET_ARCHIVE = {
         "CERTIFIED STATUTORY CLEARANCE & COMPLIANCE EXTRACT\n\n"
         "Registry Gate: MCA-21 & NJDG Central Intelligence Grid\n"
         "Status: ACTIVE / COMPLIANT\n\n"
-        "1. Zero pending warrants or dishonour suits under Section 138 NI Act registered across 672 District Courts.\n"
+        "1. Zero pending warrants or dishonour suits under Section 138 NI Act identified in the offline synthetic statutory docket archive.\n"
         "2. Zero admitted or pending insolvency petitions under Section 7, 9 or 10 of Insolvency and Bankruptcy Code (IBC).\n"
         "3. RoC Master Data reflects active DIN status for all directors; zero Section 164(2) disqualifications.\n"
         "4. Register of Charges demonstrates no unsatisfied default crystallization notices."
